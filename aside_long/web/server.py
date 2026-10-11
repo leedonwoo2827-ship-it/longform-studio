@@ -26,7 +26,7 @@ from ..log import detail, log
 
 STATIC = Path(__file__).parent / "static"
 ALLOWED = {"post", "login", "yt-meta", "probe", "all", "make", "prep", "s0-rewrite", "s1-script", "s2-tts", "s3-images", "s4-render", "s5-thumb", "doctor"}
-NAMES = {"post": "유튜브 올리기", "login": "유튜브 로그인 창", "yt-meta": "유튜브 문구 쓰기", "probe": "업로드 창 확인", "all": "전체 1→6", "prep": "개작·대본만", "make": "목소리→썸네일", "s0-rewrite": "안전 개작", "s1-script": "대본·채점",
+NAMES = {"post": "유튜브 올리기", "login": "유튜브 로그인 창", "yt-meta": "유튜브 문구 쓰기", "probe": "업로드 창 확인", "all": "전체 1→6", "prep": "1→3 개작·대본·목소리", "make": "4→6 그림·영상·썸네일", "s0-rewrite": "안전 개작", "s1-script": "대본·채점",
          "s2-tts": "목소리", "s3-images": "그림(Codex)", "s4-render": "영상 굽기", "s5-thumb": "썸네일", "doctor": "점검"}
 
 app = FastAPI(title="aside-long")

@@ -4,7 +4,7 @@
   new <job> --from <원고.docx|폴더> [--title 롱폼 세계사] [--style textbook|ink] [--voice F4] [--minutes 15]
   all       --job J [--only 1-1,…] [--force]     원고 하나를 끝까지: 안전 개작 → 대본·채점 → 목소리 → 그림 → 영상 → 썸네일
   make      --job J [--only 1-1]                  대본 확인 뒤 딸깍: 목소리 → 그림 → 영상 → 썸네일
-  prep      --job J                               모든 단원 개작·대본·채점만(그림 크레딧 아끼기)
+  prep      --job J [--only 1-1,…]                1→3: 개작 → 대본·채점·유튜브 문구 → 목소리 (그림 크레딧 안 씀)
   s0-rewrite | s1-script | s2-tts | s3-images [--scenes 3,7] | s4-render | s5-thumb   (단계별)
 올리기 (YouTube Studio — 실제 Chrome 전용 프로필)
   account add <이름> [--label @채널] [--profile <Chrome 프로필 폴더>] [--port 9361] | account list | account use <이름> | account rm <이름>
@@ -260,7 +260,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if a.cmd == "s3-images" and a.scenes:
             kw["scenes_only"] = [int(x) for x in a.scenes.split(",") if x.strip().isdigit()]
         return 0 if _guard(a.cmd, lambda: run_stage(a.cmd, job, **kw)) else 1
-    stages = STAGES if a.cmd == "all" else STAGES[:2] if a.cmd == "prep" else MAKE
+    stages = STAGES if a.cmd == "all" else STAGES[:3] if a.cmd == "prep" else MAKE
     for u in job.pick(only):
         log(f"━━ {u.prefix} {u.section}")
         for s in stages:
