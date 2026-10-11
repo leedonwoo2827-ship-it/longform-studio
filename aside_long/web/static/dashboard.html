@@ -56,54 +56,47 @@ td,th{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertic
 .gi .btns{display:flex;gap:4px;padding:0 8px 8px}
 video{width:100%;border-radius:8px;background:#000}
 .muted{color:var(--sub);font-size:12.5px}
-#log{position:fixed;left:0;right:0;bottom:0;height:210px;background:#1d1b18;color:#e9e3d6;font:12.5px/1.5 Consolas,"Malgun Gothic",monospace;padding:8px 20px;overflow:auto;border-top:3px solid #3a362f}
+#log{position:fixed;left:0;right:0;bottom:0;height:var(--logh,210px);background:#1d1b18;color:#e9e3d6;font:12.5px/1.5 Consolas,"Malgun Gothic",monospace;padding:8px 20px;overflow:auto}
+#logbar{position:fixed;left:0;right:0;bottom:var(--logh,210px);height:10px;cursor:ns-resize;background:#3a362f;z-index:5;display:flex;align-items:center;justify-content:center;user-select:none}
+#logbar::before{content:'';width:46px;height:3px;border-radius:2px;background:#8a8172}
+#logbar:hover,#logbar.drag{background:#57514a}
+body.resizing{cursor:ns-resize;user-select:none}
 #log .busy{color:#fbbf24}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .empty{padding:40px;text-align:center;color:var(--sub)}
+
+nav.tabs-top{display:flex;gap:2px;margin-left:18px}
+nav.tabs-top button{background:none;border:none;color:#c9c1b2;font-weight:700;font-size:15px;padding:8px 14px;border-radius:7px}
+nav.tabs-top button.on{background:#f6f3ec;color:#22201c}
+header .stop{background:#3a362f;color:#fff;border-color:#57514a}
+.page{padding:16px 20px calc(var(--logh,210px) + 30px);max-width:1500px;margin:0 auto}
+.grid2{display:grid;grid-template-columns:380px 1fr;gap:16px}
+.stat{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.stat .card{flex:1;min-width:140px}.stat b{font-size:26px;display:block}
+.tbl tr:hover td{background:#fbf6ec;cursor:pointer}
+.skel{max-height:560px;overflow:auto}
+.skel .su{border-bottom:1px solid var(--line);padding:7px 2px}
+.skel .su ul{margin:3px 0 0 26px;padding:0;color:var(--sub);font-size:12.5px}
+.unitbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.unitbar select{max-width:560px}
 </style>
 </head>
 <body>
 <header>
-  <h1>롱폼 공방<small>docx → 16:9 내레이션 영상 · Claude 대본 · Codex 그림</small></h1>
+  <h1>롱폼 공방</h1>
+  <nav class="tabs-top" id="nav"></nav>
   <div class="sp"></div>
   <span id="busy" class="muted" style="color:#fbbf24"></span>
-  <select id="jobSel"></select>
+  <button class="stop" onclick="stopRun()">■ 멈춤</button>
+  <select id="jobSel" style="max-width:280px;width:auto"></select>
 </header>
-
-<div class="wrap">
-  <aside>
-    <div class="card">
-      <h2>원고 넣기</h2>
-      <label>작업(시리즈) 이름</label>
-      <input id="jobName" value="세계사">
-      <label>시리즈 제목</label>
-      <input id="jobTitle" placeholder="예: 롱폼 세계사">
-      <div class="drop" id="drop">docx 를 끌어다 놓거나 클릭<br><span class="muted">원문은 01_raw 에 보관만 하고, 영상은 안전 개작본으로 만들어요</span></div>
-      <input type="file" id="file" accept=".docx,.txt,.md" multiple hidden>
-      <div class="units" id="units"></div>
-      <div class="row" style="margin-top:10px">
-        <button class="pri" data-run onclick="runAll('all')" title="이 작업의 모든 단원을 개작부터 썸네일까지 차례로 (한 단원이 실패해도 다음으로)">▶ 모든 단원 1→6</button>
-        <button data-run onclick="runAll('s1-script')" title="모든 단원 개작·대본만 먼저 (그림 크레딧 아끼기)">개작·대본만</button>
-      </div>
-    </div>
-    <div class="card" style="margin-top:12px" id="setCard">
-      <h2>설정 <span class="muted" id="setJob"></span></h2>
-      <label>화풍</label><select id="sStyle"></select>
-      <label>목표 길이(분)</label><input id="sMin" type="number" min="3" max="40" step="1">
-      <div class="row"><div style="flex:1"><label>목소리</label><select id="sVoice"></select></div>
-        <div style="flex:1"><label>말 속도</label><input id="sSpeed" type="number" min="0.8" max="1.4" step="0.05"></div></div>
-      <label>썸네일 그림(씬 번호)</label><input id="sThumb" type="number" min="1" step="1">
-      <div style="margin-top:10px"><button onclick="saveSettings()">설정 저장</button></div>
-    </div>
-  </aside>
-
-  <main class="card" id="main"><div class="empty">왼쪽에서 원고(docx)를 넣고 단원을 고르세요.</div></main>
-</div>
-
+<div class="page" id="page"></div>
+<div id="logbar" title="끌어서 높이 조절 · 두 번 누르면 접기/펴기"></div>
 <div id="log"></div>
 
 <script>
-let S = {jobs: []}, JOB = null, SID = null, U = null, TAB = 'src', since = 0, DIRTY = false;
+let S = {jobs: []}, JOB = null, SID = null, U = null, PAGE = 'make', TAB = 'src', since = 0, DIRTY = false, SEL = new Set(), ACCS = null;
+const PAGES = [['make', '만들기'], ['dash', '대시보드'], ['edit', '수정'], ['up', '업로드'], ['set', '설정']];
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function api(url, opt = {}) {
@@ -111,88 +104,146 @@ async function api(url, opt = {}) {
   if (!r.ok) { const t = await r.text(); let m = t; try { m = JSON.parse(t).detail } catch (e) {} ; alert(m); throw new Error(m) }
   return r.json();
 }
-function job() { return S.jobs.find(j => j.name === JOB) }
+const job = () => S.jobs.find(j => j.name === JOB);
+const units = () => job()?.units || [];
+function pill(t, cls = '') { return `<span class="pill ${cls}">${t}</span>` }
+const readURL = f => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f) });
 
 async function refresh() {
   S = await api('/api/state');
+  if (JOB && !job()) JOB = null;
   if (!JOB && S.jobs.length) JOB = S.jobs[0].name;
-  $('#jobSel').innerHTML = S.jobs.map(j => `<option ${j.name === JOB ? 'selected' : ''}>${esc(j.name)}</option>`).join('') || '<option>작업 없음</option>';
+  $('#jobSel').innerHTML = S.jobs.map(j => `<option value="${esc(j.name)}" ${j.name === JOB ? 'selected' : ''}>${esc(j.title || j.name)} (${esc(j.name)})</option>`).join('') || '<option>작업 없음 — 「만들기」에서 원고를 넣으세요</option>';
   $('#busy').textContent = S.busy ? '● 작업 중: ' + (S.cmd || []).slice(0, 1).join(' ') : '';
   document.querySelectorAll('[data-run]').forEach(b => b.disabled = S.busy);
-  renderUnits(); renderSettings();
 }
-function pill(t, cls = '') { return `<span class="pill ${cls}">${t}</span>` }
-function renderUnits() {
-  const j = job();
-  $('#units').innerHTML = !j ? '' : j.units.map(u => `
-    <div class="unit ${u.prefix === SID ? 'sel' : ''}" onclick="pick('${u.prefix}')">
-      <b>${esc(u.prefix)} · ${esc(u.section)}</b>
-      <div class="pills">
-        ${pill('개작', u.rewrite ? (u.rewrite_passed === false ? 'warn' : 'ok') : '')}
-        ${pill(u.score != null ? '대본 ' + u.score + '점' : '대본', u.script ? (u.score >= 80 ? 'ok' : 'warn') : '')}
-        ${pill(u.audio_min ? '음성 ' + u.audio_min + '분' : '음성', u.audio_min ? 'ok' : '')}
-        ${pill('그림 ' + u.images + '/' + u.scenes, u.scenes && u.images >= u.scenes ? 'ok' : (u.images ? 'warn' : ''))}
-        ${pill('영상', u.video ? 'ok' : '')}
-      </div>
-    </div>`).join('');
-}
-function renderSettings() {
-  const j = job(); if (!j) return;
-  $('#setJob').textContent = '· ' + j.name;
-  $('#sStyle').innerHTML = S.styles.map(s => `<option value="${s.id}" ${s.id === j.settings.style ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
-  $('#sVoice').innerHTML = S.voices.map(v => `<option ${v === j.settings.voice ? 'selected' : ''}>${v}</option>`).join('');
-  if (document.activeElement?.closest?.('#setCard')) return;
-  $('#sMin').value = j.settings.target_minutes; $('#sSpeed').value = j.settings.speed; $('#sThumb').value = j.settings.thumb_scene;
-}
-async function saveSettings() {
-  await api(`/api/job/${encodeURIComponent(JOB)}/settings`, {method: 'PUT', body: JSON.stringify({
-    style: $('#sStyle').value, target_minutes: +$('#sMin').value, voice: $('#sVoice').value,
-    speed: +$('#sSpeed').value, thumb_scene: +$('#sThumb').value})});
-  await refresh();
-}
-$('#jobSel').onchange = e => { JOB = e.target.value; SID = null; U = null; refresh(); renderMain() };
-
-// ── 업로드 ──
-const drop = $('#drop');
-drop.onclick = () => $('#file').click();
-drop.ondragover = e => { e.preventDefault(); drop.classList.add('on') };
-drop.ondragleave = () => drop.classList.remove('on');
-drop.ondrop = e => { e.preventDefault(); drop.classList.remove('on'); upload([...e.dataTransfer.files]) };
-$('#file').onchange = e => upload([...e.target.files]);
-const readURL = f => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f) });
-async function upload(files) {
-  const name = $('#jobName').value.trim(); if (!name) return alert('작업 이름을 정해 주세요');
-  let last;
-  for (const f of files) last = await api('/api/upload', {method: 'POST', body: JSON.stringify({job: name, title: $('#jobTitle').value, filename: f.name, data: await readURL(f)})});
-  JOB = name; await refresh();
-  const u = job()?.units.find(x => x.name === last?.unit); if (u) pick(u.prefix);
+$('#jobSel').onchange = e => { JOB = e.target.value; SID = null; U = null; SEL.clear(); show(PAGE) };
+function nav() { $('#nav').innerHTML = PAGES.map(([k, t]) => `<button class="${PAGE === k ? 'on' : ''}" onclick="show('${k}')">${t}</button>`).join('') }
+async function show(p) {
+  if (DIRTY && PAGE === 'edit' && p !== 'edit' && !confirm('저장하지 않은 대본 수정이 있어요. 나갈까요?')) return;
+  if (p !== PAGE) DIRTY = false;
+  PAGE = p; nav(); await refresh();
+  await ({make: pageMake, dash: pageDash, edit: pageEdit, up: pageUp, set: pageSet})[p]();
 }
 
 // ── 실행 ──
+async function runArgs(args) { await api('/api/run', {method: 'POST', body: JSON.stringify({args})}); refresh() }
 async function runCmd(cmd, extra = []) {
   if (DIRTY && !confirm('저장하지 않은 대본 수정이 있어요. 그래도 실행할까요?')) return;
-  await api('/api/run', {method: 'POST', body: JSON.stringify({args: [cmd, '--job', JOB, '--only', SID, ...extra]})});
-  refresh();
-}
-async function runAll(cmd) {
-  const n = job()?.units.length || 0;
-  if (!n) return alert('원고를 먼저 넣어 주세요');
-  if (!confirm(`「${JOB}」의 단원 ${n}개를 모두 ${cmd === 'all' ? '끝까지 만들까요? (단원마다 Claude 10분 + 그림 수십 장)' : '개작·대본까지 만들까요?'}`)) return;
-  await api('/api/run', {method: 'POST', body: JSON.stringify({args: cmd === 'all' ? ['all', '--job', JOB] : ['prep', '--job', JOB]})});
-  refresh();
+  await runArgs([cmd, '--job', JOB, '--only', SID, ...extra]);
 }
 async function stopRun() { await api('/api/stop', {method: 'POST'}); refresh() }
+function step(cmd, label, title) { return `<button data-run onclick="runCmd('${cmd}')" title="${title}" ${S.busy ? 'disabled' : ''}>${label}</button>` }
 
-// ── 본문 ──
-async function pick(sid) { SID = sid; DIRTY = false; renderUnits(); await loadUnit(); }
+// ══ 만들기 — 원고 넣기 · 원고 뼈대 · 일괄 실행 ══
+let SKEL = null;
+async function pageMake() {
+  SKEL = JOB ? await api('/api/skeleton/' + encodeURIComponent(JOB)) : null;
+  const n = SKEL?.units.length || 0;
+  $('#page').innerHTML = `<div class="grid2">
+    <div class="card">
+      <h2>1 원고 넣기</h2>
+      <label>작업 이름 (폴더 이름 — 비우면 파일 이름에서)</label><input id="mkName" placeholder="예: 한국사1">
+      <label>시리즈 제목</label><input id="mkTitle" placeholder="예: 고등학교 한국사1">
+      <div class="drop" id="drop">docx 를 끌어다 놓거나 클릭<br><span class="muted">책 한 권이면 「주제 NN」마다 단원(영상 한 편)으로 나눠요.<br>원문은 01_raw 에 보관만 하고, 영상은 안전 개작본으로 만들어요.</span></div>
+      <input type="file" id="file" accept=".docx,.txt,.md" multiple hidden>
+      <p class="muted">같은 작업 이름으로 다시 넣으면 그 작업에 더해져요. 다른 책은 다른 이름으로.</p>
+    </div>
+    <div class="card">
+      <h2>2 원고 뼈대 ${SKEL ? `<span class="muted">· ${esc(SKEL.title)} · 단원 ${n}개 · ${SKEL.units.reduce((a, u) => a + u.chars, 0).toLocaleString()}자</span>` : ''}</h2>
+      ${!n ? '<div class="empty">아직 원고가 없어요 — 왼쪽에 docx 를 넣으세요.</div>' : `
+      <div class="row" style="margin-bottom:6px"><label style="margin:0"><input type="checkbox" style="width:auto" onchange="selAll(this.checked)"> 전체 선택</label><span class="muted" id="selN"></span></div>
+      <div class="skel">${SKEL.units.map(u => { const st = units().find(x => x.prefix === u.prefix) || {}; return `
+        <div class="su"><label style="display:inline;margin:0;color:var(--ink)"><input type="checkbox" style="width:auto" data-sel="${u.prefix}" ${SEL.has(u.prefix) ? 'checked' : ''} onchange="tog('${u.prefix}',this.checked)">
+          <b>${esc(u.prefix)}</b> ${esc(u.section)}</label> <span class="muted">${u.chars.toLocaleString()}자</span>
+          ${st.script ? pill('대본 ' + (st.score ?? ''), 'ok') : ''}${st.video ? pill('영상', 'ok') : ''}${st.posted ? pill('업로드', 'ok') : ''}
+          <ul>${u.heads.map(h => '<li>' + esc(h) + '</li>').join('')}</ul></div>`}).join('')}</div>
+      <h2 style="margin-top:14px">3 만들기 <span class="muted">— 선택한 단원 (선택 없으면 전체)</span></h2>
+      <div class="row">
+        <button data-run onclick="bulk('prep')" title="개작 → 대본·채점 → 유튜브 문구 (그림 크레딧 안 씀)">개작·대본만</button>
+        <button class="go" data-run onclick="bulk('make')" title="대본 확인 뒤: 목소리 → 그림 → 영상 → 썸네일">▶ 3→6 영상 만들기</button>
+        <button class="pri" data-run onclick="bulk('all')" title="개작부터 썸네일까지 한 번에">▶ 전체 1→6</button>
+      </div>
+      <p class="muted">단원마다 Claude 약 10분, 그림은 씬 수(40장 안팎)만큼 Codex 를 써요. 한 단원이 실패해도 다음 단원으로 넘어가요. 진행은 「대시보드」에서.</p>`}
+    </div></div>`;
+  wireDrop(); updSel();
+}
+function tog(p, on) { on ? SEL.add(p) : SEL.delete(p); updSel() }
+function selAll(on) { SEL = new Set(on ? SKEL.units.map(u => u.prefix) : []); document.querySelectorAll('[data-sel]').forEach(c => c.checked = on); updSel() }
+function updSel() { const e = $('#selN'); if (e) e.textContent = SEL.size ? `${SEL.size}개 선택` : '선택 없음 = 전체' }
+async function bulk(cmd) {
+  const list = [...SEL], n = list.length || units().length;
+  const what = {prep: '개작·대본까지', make: '목소리부터 썸네일까지', all: '개작부터 썸네일까지'}[cmd];
+  if (!confirm(`「${JOB}」 단원 ${n}개를 ${what} 만들까요?`)) return;
+  await runArgs([cmd, '--job', JOB, ...(list.length ? ['--only', list.join(',')] : [])]);
+}
+function wireDrop() {
+  const drop = $('#drop'); if (!drop) return;
+  drop.onclick = () => $('#file').click();
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('on') };
+  drop.ondragleave = () => drop.classList.remove('on');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('on'); uploadDocs([...e.dataTransfer.files]) };
+  $('#file').onchange = e => uploadDocs([...e.target.files]);
+}
+async function uploadDocs(files) {
+  if (!files.length) return;
+  const stem = files[0].name.replace(/\.[^.]+$/, '');
+  let name = $('#mkName').value.trim();
+  if (!name) {
+    name = stem.replace(/^고등학교\s*/, '').replace(/[\\/:*?"<>|\s]+/g, '');
+    if (!confirm(`작업 이름을 「${name}」(으)로 만들까요?`)) return;
+  }
+  const title = $('#mkTitle').value.trim() || stem;
+  for (const f of files) await api('/api/upload', {method: 'POST', body: JSON.stringify({job: name, title, filename: f.name, data: await readURL(f)})});
+  JOB = name; SEL.clear(); show('make');
+}
+
+// ══ 대시보드 — 단원 전체 현황 ══
+function pageDash() {
+  const us = units();
+  if (!us.length) { $('#page').innerHTML = '<div class="card empty">작업이 없어요 — 「만들기」에서 원고를 넣으세요.</div>'; return }
+  const c = k => us.filter(k).length;
+  const mins = us.reduce((a, u) => a + (u.audio_min || 0), 0);
+  $('#page').innerHTML = `
+    <div class="stat">
+      <div class="card"><span class="muted">단원</span><b>${us.length}</b></div>
+      <div class="card"><span class="muted">개작</span><b>${c(u => u.rewrite)}</b></div>
+      <div class="card"><span class="muted">대본</span><b>${c(u => u.script)}</b></div>
+      <div class="card"><span class="muted">그림 완료</span><b>${c(u => u.scenes && u.images >= u.scenes)}</b></div>
+      <div class="card"><span class="muted">영상</span><b>${c(u => u.video)}</b><span class="muted">총 ${mins.toFixed(0)}분</span></div>
+      <div class="card"><span class="muted">업로드</span><b>${c(u => u.posted || u.scheduled)}</b></div>
+    </div>
+    <div class="card"><table class="tbl">
+      <tr><th>번호</th><th>단원</th><th>원고</th><th>개작</th><th>대본</th><th>음성</th><th>그림</th><th>영상</th><th>업로드</th></tr>
+      ${us.map(u => `<tr onclick="SID='${u.prefix}';U=null;show('edit')">
+        <td><b>${esc(u.prefix)}</b></td><td>${esc(u.section)}</td><td class="muted">${(u.chars || 0).toLocaleString()}자</td>
+        <td>${u.rewrite ? pill(u.rewrite_passed === false ? '문제 남음' : '통과', u.rewrite_passed === false ? 'warn' : 'ok') : '—'}</td>
+        <td>${u.script ? pill((u.score ?? '') + '점' + (u.edited ? '·수정' : ''), u.score >= 80 ? 'ok' : 'warn') : '—'}</td>
+        <td>${u.audio_min ? u.audio_min + '분' : '—'}</td>
+        <td>${u.scenes ? pill(u.images + '/' + u.scenes, u.images >= u.scenes ? 'ok' : 'warn') : '—'}</td>
+        <td>${u.video ? pill('완성', 'ok') : '—'}</td>
+        <td>${u.posted ? `<a href="${esc(u.posted)}" target="_blank" onclick="event.stopPropagation()">올림</a>` : u.scheduled ? pill('예약 ' + esc(u.scheduled), 'ok') : u.upload_error ? pill('실패', 'bad') : '—'}</td></tr>`).join('')}
+    </table><p class="muted">줄을 누르면 「수정」으로 가요.</p></div>`;
+}
+
+// ══ 수정 — 단원 하나: 원고·개작 / 대본 / 그림 / 영상 ══
+function unitPicker(fn) {
+  const us = units();
+  if (!SID || !us.find(u => u.prefix === SID)) SID = us[0]?.prefix;
+  return `<div class="unitbar"><b>단원</b><select onchange="if(DIRTY&&!confirm('저장하지 않은 수정이 있어요. 넘어갈까요?')){this.value=SID;return}SID=this.value;U=null;DIRTY=false;${fn}()">${us.map(u => `<option value="${u.prefix}" ${u.prefix === SID ? 'selected' : ''}>${esc(u.prefix)} · ${esc(u.section)}</option>`).join('')}</select></div>`;
+}
 async function loadUnit() {
   if (!SID) return;
   U = await api(`/api/unit/${encodeURIComponent(JOB)}/${SID}`);
-  renderMain();
+  if (PAGE === 'edit' && $('#main')) renderMain(); else if (PAGE === 'up' && $('#tab')) await tabUp();
 }
-function step(cmd, label, title) { return `<button data-run onclick="runCmd('${cmd}')" title="${title}" ${S.busy ? 'disabled' : ''}>${label}</button>` }
+async function pageEdit() {
+  if (!units().length) { $('#page').innerHTML = '<div class="card empty">작업이 없어요 — 「만들기」에서 원고를 넣으세요.</div>'; return }
+  $('#page').innerHTML = unitPicker('pageEdit') + '<div class="card" id="main"></div>';
+  await loadUnit();
+}
 function renderMain() {
-  if (!U || !SID) { $('#main').innerHTML = '<div class="empty">왼쪽에서 원고(docx)를 넣고 단원을 고르세요.</div>'; return }
+  if (!U) return;
   const st = U.status;
   $('#main').innerHTML = `
     <div class="row" style="justify-content:space-between">
@@ -201,21 +252,101 @@ function renderMain() {
     </div>
     <div class="steps" style="margin-top:10px">
       ${step('s0-rewrite', '1 안전 개작', '원문을 저작권 안전한 새 글로 (Claude)')}<span class="arrow">→</span>
-      ${step('s1-script', '2 대본·채점', '롱폼 대본 + 100점 채점 (Claude)')}<span class="arrow">→</span>
+      ${step('s1-script', '2 대본·채점', '롱폼 대본 + 100점 채점 + 유튜브 문구 (Claude)')}<span class="arrow">→</span>
       ${step('s2-tts', '3 목소리', 'SuperTonic3')}<span class="arrow">→</span>
       ${step('s3-images', '4 그림', 'Codex 3개 동시')}<span class="arrow">→</span>
       ${step('s4-render', '5 영상', 'ffmpeg 1920×1080')}<span class="arrow">→</span>
       ${step('s5-thumb', '6 썸네일', '1280×720')}
       <span style="flex:1"></span>
-      <button class="go" data-run onclick="runCmd('make')" ${S.busy ? 'disabled' : ''} title="대본 확인 뒤: 목소리→그림→영상→썸네일">▶ 3→6 딸깍</button>
-      <button class="pri" data-run onclick="runCmd('all')" ${S.busy ? 'disabled' : ''} title="개작부터 썸네일까지 한 번에">▶ 전체 1→6</button>
-      <button onclick="stopRun()">■ 멈춤</button>
+      <button class="go" data-run onclick="runCmd('make')" ${S.busy ? 'disabled' : ''}>▶ 3→6</button>
+      <button class="pri" data-run onclick="runCmd('all')" ${S.busy ? 'disabled' : ''}>▶ 전체 1→6</button>
     </div>
     <div class="tabs">
-      ${[['src', '원고·개작'], ['script', '대본'], ['img', '그림'], ['vid', '영상'], ['up', '유튜브 올리기']].map(([k, t]) => `<button class="${TAB === k ? 'on' : ''}" onclick="TAB='${k}';renderMain()">${t}</button>`).join('')}
+      ${[['src', '원고·개작'], ['script', '대본'], ['img', '그림'], ['vid', '영상']].map(([k, t]) => `<button class="${TAB === k ? 'on' : ''}" onclick="TAB='${k}';renderMain()">${t}</button>`).join('')}
     </div>
     <div id="tab"></div>`;
-  ({src: tabSrc, script: tabScript, img: tabImg, vid: tabVid, up: tabUp})[TAB]();
+  ({src: tabSrc, script: tabScript, img: tabImg, vid: tabVid})[TAB]();
+}
+
+// ══ 업로드 ══
+async function pageUp() {
+  if (!units().length) { $('#page').innerHTML = '<div class="card empty">작업이 없어요.</div>'; return }
+  const posted = units().filter(u => u.posted || u.scheduled);
+  $('#page').innerHTML = unitPicker('pageUp') + `<div class="card"><div id="tab"></div></div>
+    <div class="card" style="margin-top:12px"><h2>올린 영상</h2>${posted.length ? `<table>${posted.map(u => `<tr><td>${esc(u.prefix)}</td><td>${esc(u.section)}</td><td>${u.scheduled ? '예약 ' + esc(u.scheduled) : ''}</td><td><a href="${esc(u.posted || '#')}" target="_blank">${esc(u.posted || '')}</a></td></tr>`).join('')}</table>` : '<p class="muted">아직 없어요.</p>'}</div>`;
+  await loadUnit();
+}
+
+// ══ 설정 ══
+async function pageSet() {
+  const cfg = await api('/api/config');
+  const tl = await api('/api/tools').catch(() => null);
+  ACCS = await api('/api/accounts');
+  const j = job();
+  const opt = (arr, cur) => arr.map(([v, t]) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(t)}</option>`).join('');
+  const sty = S.styles.map(s => [s.id, s.name]), voi = S.voices.map(v => [v, v]);
+  $('#page').innerHTML = `<div class="grid2">
+    <div>
+      ${j ? `<div class="card"><h2>이 작업 설정 <span class="muted">· ${esc(j.name)}</span></h2>
+        <label>시리즈 제목</label><input id="jT" value="${esc(j.title)}">
+        <label>화풍</label><select id="jS">${opt(sty, j.settings.style)}</select>
+        <label>목표 길이(분)</label><input id="jM" type="number" min="3" max="40" value="${j.settings.target_minutes}">
+        <div class="row"><div style="flex:1"><label>목소리</label><select id="jV">${opt(voi, j.settings.voice)}</select></div>
+          <div style="flex:1"><label>말 속도</label><input id="jSp" type="number" min="0.7" max="1.4" step="0.05" value="${j.settings.speed}"></div></div>
+        <label>썸네일 그림(씬 번호)</label><input id="jTh" type="number" min="1" value="${j.settings.thumb_scene}">
+        <div class="row" style="margin-top:10px"><button class="pri" onclick="saveJob()">저장</button><span style="flex:1"></span>
+          <button onclick="delJob()" style="color:var(--bad)">이 작업 지우기</button></div>
+      </div>` : '<div class="card muted">작업이 없어요.</div>'}
+      <div class="card" style="margin-top:12px"><h2>도구 상태</h2>${tl ? `<table>
+        <tr><td>Claude (개작·대본)</td><td>${tl.claude.logged_in ? pill('로그인 ' + esc(tl.claude.email), 'ok') : pill('로그인 필요', 'bad')}</td></tr>
+        <tr><td>Codex (그림)</td><td>${tl.codex.installed ? pill(esc(tl.codex.status || '설치됨'), /Logged in/i.test(tl.codex.status) ? 'ok' : 'warn') : pill('없음', 'bad')}</td></tr>
+        <tr><td>SuperTonic3 (목소리)</td><td>${pill(tl.tts ? '준비됨' : '없음', tl.tts ? 'ok' : 'bad')}</td></tr>
+        <tr><td>ffmpeg (영상)</td><td>${pill(tl.ffmpeg ? '있음' : '없음', tl.ffmpeg ? 'ok' : 'bad')}</td></tr></table>
+        <p class="muted">Codex 계정 바꾸기: 터미널에서 <code>codex logout</code> → <code>codex login</code></p>` : ''}</div>
+    </div>
+    <div>
+      <div class="card"><h2>전체 기본값 <span class="muted">(작업 설정이 없을 때 쓰임)</span></h2>
+        <div class="row"><div style="flex:2"><label>자막 글꼴</label><input id="gF" value="${esc(cfg.render.caption_font)}"></div>
+          <div style="flex:1"><label>자막 크기(px)</label><input id="gSz" type="number" value="${cfg.render.caption_size}"></div>
+          <div style="flex:1"><label>줄당 글자</label><input id="gMl" type="number" value="${cfg.render.max_line_chars}"></div></div>
+        <div class="row"><div style="flex:1"><label>그림 높이(px, 최대 1080)</label><input id="gIh" type="number" value="${cfg.render.image_h}"></div>
+          <div style="flex:1"><label>Codex 동시 개수</label><input id="gW" type="number" min="1" max="6" value="${cfg.image.workers}"></div></div>
+        <div class="row"><div style="flex:1"><label>기본 목표 길이(분)</label><input id="gM" type="number" value="${cfg.long.target_minutes}"></div>
+          <div style="flex:1"><label>기본 화풍</label><select id="gS">${opt(sty, cfg.long.style)}</select></div></div>
+        <div class="row"><div style="flex:1"><label>기본 목소리</label><select id="gV">${opt(voi, cfg.tts.voice)}</select></div>
+          <div style="flex:1"><label>기본 말 속도</label><input id="gSp" type="number" step="0.05" value="${cfg.tts.speed}"></div></div>
+        <div class="row"><div style="flex:1"><label>업로드 기본 공개</label><select id="gVis">${opt([['public', '공개'], ['unlisted', '일부 공개'], ['private', '비공개']], cfg.youtube.visibility)}</select></div>
+          <div style="flex:1"><label>AI 사용 표시</label><select id="gAi">${opt([['true', '예 — 변경·합성 콘텐츠'], ['false', '하지 않음']], cfg.youtube.ai_disclosure)}</select></div></div>
+        <p class="muted">글꼴 이름: Pretendard SemiBold · Pretendard Bold · Nanum Pen · Black Han Sans. 바꾼 뒤 「5 영상」을 다시 누르면 반영돼요(그림·음성은 그대로).</p>
+        <button class="pri" onclick="saveCfg()">기본값 저장</button></div>
+      <div class="card" style="margin-top:12px"><h2>유튜브 채널</h2>
+        <table>${ACCS.accounts.map(a => `<tr><td>${a.name === ACCS.current ? '▶' : ''}</td><td><b>${esc(a.label || a.name)}</b></td><td class="muted">${esc(a.name)} · 포트 ${a.port}${a.profile ? ' · 쇼츠와 같은 Chrome 프로필' : ''}</td>
+          <td><button onclick="useAcc('${esc(a.name)}')">기본으로</button> <button data-run onclick="runArgs(['login','--account','${esc(a.name)}'])">로그인 창</button></td></tr>`).join('') || '<tr><td class="muted">채널이 없어요</td></tr>'}</table>
+        <div class="row" style="margin-top:8px"><input id="aN" placeholder="이름(영문, 예: history)" style="flex:1"><input id="aL" placeholder="표시(예: @채널)" style="flex:1"><button onclick="addAcc()">채널 추가</button></div>
+        <p class="muted">추가한 뒤 「로그인 창」에서 Google 로그인과 채널 선택을 한 번 해 주세요.</p></div>
+    </div></div>`;
+}
+async function saveJob() {
+  await api(`/api/job/${encodeURIComponent(JOB)}/settings`, {method: 'PUT', body: JSON.stringify({
+    title: $('#jT').value, style: $('#jS').value, target_minutes: +$('#jM').value, voice: $('#jV').value,
+    speed: +$('#jSp').value, thumb_scene: +$('#jTh').value})});
+  alert('저장했어요'); show('set');
+}
+async function delJob() {
+  if (prompt(`「${JOB}」 작업 폴더(원고·대본·그림·영상)를 모두 지워요. 지우려면 작업 이름을 그대로 입력하세요.`) !== JOB) return;
+  await api('/api/job/' + encodeURIComponent(JOB), {method: 'DELETE'}); JOB = null; SID = null; show('make');
+}
+async function saveCfg() {
+  await api('/api/config', {method: 'PUT', body: JSON.stringify({
+    render: {caption_font: $('#gF').value, caption_size: +$('#gSz').value, max_line_chars: +$('#gMl').value, image_h: Math.min(1080, +$('#gIh').value)},
+    image: {workers: +$('#gW').value}, long: {target_minutes: +$('#gM').value, style: $('#gS').value},
+    tts: {voice: $('#gV').value, speed: +$('#gSp').value},
+    youtube: {visibility: $('#gVis').value, ai_disclosure: $('#gAi').value === 'true'}})});
+  alert('저장했어요');
+}
+async function useAcc(n) { await api('/api/accounts/use', {method: 'POST', body: JSON.stringify({name: n})}); show('set') }
+async function addAcc() {
+  await api('/api/accounts/add', {method: 'POST', body: JSON.stringify({name: $('#aN').value.trim(), label: $('#aL').value.trim()})}); show('set');
 }
 
 function tabSrc() {
@@ -325,7 +456,6 @@ function tabVid() {
     ${U.contacts.map(c => `<a href="${c}" target="_blank"><img src="${c}" style="width:100%;border-radius:8px;margin-bottom:8px"></a>`).join('')}`
     : '<div class="empty">아직 영상이 없어요 — 「5 영상」을 눌러 주세요.</div>';
 }
-let ACCS = null;
 async function tabUp() {
   const up = U.upload || {}, m = up.meta, st = up.state || {};
   if (!ACCS) ACCS = await api('/api/accounts');
@@ -366,6 +496,7 @@ async function post(dry) {
   if (dry) args.push('--dry-run');
   await runCmd('post', args);
 }
+
 async function openFolder() { await api('/api/open', {method: 'POST', body: JSON.stringify({path: U.folder})}) }
 
 // ── 로그 ──
@@ -379,15 +510,33 @@ async function pollLog() {
       el.insertAdjacentHTML('beforeend', r.lines.map(l => `<div>${esc(l)}</div>`).join(''));
       if (atEnd) el.scrollTop = el.scrollHeight;
     }
-    if (r.busy !== wasBusy || (r.busy && r.lines.length)) {
-      await refresh();
-      if (!r.busy && wasBusy && SID && !DIRTY) await loadUnit();
+    if (r.busy !== wasBusy) {
+      const done = wasBusy && !r.busy;
       wasBusy = r.busy;
+      await refresh();
+      if (done && !DIRTY && PAGE !== 'set') show(PAGE);
     }
   } catch (e) {}
   setTimeout(pollLog, 1000);
 }
-refresh().then(pollLog);
+// ── 로그 창 높이: 위 막대를 끌어서 조절, 두 번 누르면 접기/펴기 (브라우저에 기억) ──
+(function () {
+  const root = document.documentElement, bar = $('#logbar'), MIN = 28, KEY = 'aside_long_logh';
+  const set = h => { h = Math.max(MIN, Math.min(window.innerHeight - 120, Math.round(h))); root.style.setProperty('--logh', h + 'px'); return h };
+  let saved = 210; try { saved = +localStorage.getItem(KEY) || 210 } catch (e) {}
+  let cur = set(saved), last = cur > MIN ? cur : 210;
+  const save = () => { try { localStorage.setItem(KEY, cur) } catch (e) {} };
+  bar.addEventListener('pointerdown', e => {
+    e.preventDefault(); bar.setPointerCapture(e.pointerId); bar.classList.add('drag'); document.body.classList.add('resizing');
+    const move = ev => { cur = set(window.innerHeight - ev.clientY - 5) };
+    const up = () => { bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up);
+      bar.classList.remove('drag'); document.body.classList.remove('resizing'); if (cur > MIN) last = cur; save() };
+    bar.addEventListener('pointermove', move); bar.addEventListener('pointerup', up);
+  });
+  bar.addEventListener('dblclick', () => { cur = set(cur > MIN ? MIN : last); save() });
+  window.addEventListener('resize', () => { cur = set(cur) });
+})();
+show('make').then(pollLog);
 </script>
 </body>
 </html>

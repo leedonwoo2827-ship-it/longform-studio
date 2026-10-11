@@ -112,7 +112,18 @@ def _unit_status(job: Job, u) -> Dict[str, Any]:
             "rewrite_passed": (config.read_json(u.dir / "02_rewrite" / "검증.json", {}) or {}).get("passed"),
             "script": bool(script), "edited": job.edit_path(sid).exists(), "score": sc.get("score"),
             "scenes": n, "images": imgs, "audio_min": round(timing.get("duration", 0) / 60, 1) if timing else 0,
-            "video": video.exists()}
+            "video": video.exists(), "chars": len(u.text) if u.rewrite else _raw_chars(u),
+            "posted": ((job.state().get(sid) or {}).get("posted") or {}).get("url") or None,
+            "scheduled": ((job.state().get(sid) or {}).get("scheduled") or {}).get("when"),
+            "upload_error": bool((job.state().get(sid) or {}).get("error"))}
+
+
+def _raw_chars(u) -> int:
+    from ..manuscript import read_text
+    try:
+        return len(read_text(u.raw)) if u.raw else 0
+    except Exception:       # noqa: BLE001
+        return 0
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -133,6 +144,74 @@ def state() -> Dict[str, Any]:
     return {"jobs": jobs, "busy": RUN.busy, "cmd": RUN.cmd, "voices": tts.VOICES,
             "styles": [{"id": k, "name": v["name"]} for k, v in styles.PRESETS.items()],
             "defaults": {"target_minutes": cfg["long"]["target_minutes"], "voice": cfg["tts"]["voice"]}}
+
+
+@app.get("/api/skeleton/{name}")
+def skeleton(name: str) -> Dict[str, Any]:
+    """원고 뼈대 — 단원(주제)마다 소제목 목록·글자 수. 원본 docx 의 Heading 2 를 읽는다."""
+    job = _job(name)
+    out = []
+    for u in job.units:
+        heads: List[str] = []
+        if u.raw and u.raw.suffix.lower() == ".docx":
+            import docx
+            heads = [p.text.strip() for p in docx.Document(str(u.raw)).paragraphs
+                     if (p.style.name or "").lower().startswith("heading 2") and p.text.strip()]
+        out.append({"prefix": u.prefix, "section": u.section, "heads": heads, "chars": _raw_chars(u)})
+    return {"units": out, "title": job.get("title", name)}
+
+
+@app.delete("/api/job/{name}")
+def delete_job(name: str) -> Dict[str, Any]:
+    import shutil
+    job = _job(name)
+    if RUN.busy:
+        raise HTTPException(409, "작업이 도는 중에는 지울 수 없어요")
+    shutil.rmtree(job.dir)
+    RUN.add(f"작업을 지웠어요: {name}")
+    return {"ok": True}
+
+
+EDITABLE = {"render": ["caption_font", "caption_size", "image_h", "max_line_chars"],
+            "image": ["workers"], "youtube": ["visibility", "ai_disclosure"],
+            "long": ["target_minutes", "style"], "tts": ["voice", "speed"]}
+
+
+@app.get("/api/config")
+def get_config() -> Dict[str, Any]:
+    cfg = config.load()
+    return {sec: {k: cfg[sec].get(k) for k in keys} for sec, keys in EDITABLE.items()}
+
+
+@app.put("/api/config")
+def put_config(body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+    """전체 기본값 — aside.config.local.json 에 덮어 쓴다(작업별 설정이 있으면 그것이 이긴다)."""
+    path = config.ROOT / "aside.config.local.json"
+    cur = config.read_json(path, {}) or {}
+    for sec, keys in EDITABLE.items():
+        for k in keys:
+            if k in (body.get(sec) or {}):
+                cur.setdefault(sec, {})[k] = body[sec][k]
+    config.write_json(path, cur)
+    return {"ok": True}
+
+
+@app.get("/api/tools")
+def tools() -> Dict[str, Any]:
+    import shutil
+    from ..llm import claude_cli
+    from ..s3_images import exe as codex_exe
+    cx = codex_exe()
+    cx_status = ""
+    if cx:
+        try:
+            r = subprocess.run([cx, "login", "status"], capture_output=True, timeout=20,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            cx_status = (r.stdout + r.stderr).decode("utf-8", "replace").strip()[:120]
+        except Exception as e:      # noqa: BLE001
+            cx_status = str(e)[:120]
+    return {"claude": claude_cli.auth_status(), "codex": {"installed": bool(cx), "status": cx_status},
+            "tts": tts.available(), "ffmpeg": bool(shutil.which("ffmpeg"))}
 
 
 @app.get("/api/log")
@@ -275,6 +354,21 @@ def accounts_list() -> Dict[str, Any]:
 
 class AccReq(BaseModel):
     name: str
+
+
+class AccAddReq(BaseModel):
+    name: str
+    label: str = ""
+    profile: str = ""
+
+
+@app.post("/api/accounts/add")
+def accounts_add(req: AccAddReq) -> Dict[str, Any]:
+    from .. import accounts
+    try:
+        return {"ok": True, "account": accounts.add(req.name, req.label, req.profile)}
+    except SystemExit as e:
+        raise HTTPException(400, str(e.code))
 
 
 @app.post("/api/accounts/use")

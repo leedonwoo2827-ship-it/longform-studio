@@ -8,3 +8,4 @@ _context/
 *.tmp
 profiles/
 local.json
+samples/
