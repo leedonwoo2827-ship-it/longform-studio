@@ -25,8 +25,8 @@ from ..job import Job, all_jobs, scenes
 from ..log import detail, log
 
 STATIC = Path(__file__).parent / "static"
-ALLOWED = {"all", "make", "prep", "s0-rewrite", "s1-script", "s2-tts", "s3-images", "s4-render", "s5-thumb", "doctor"}
-NAMES = {"all": "전체 1→6", "prep": "개작·대본만", "make": "목소리→썸네일", "s0-rewrite": "안전 개작", "s1-script": "대본·채점",
+ALLOWED = {"post", "login", "yt-meta", "probe", "all", "make", "prep", "s0-rewrite", "s1-script", "s2-tts", "s3-images", "s4-render", "s5-thumb", "doctor"}
+NAMES = {"post": "유튜브 올리기", "login": "유튜브 로그인 창", "yt-meta": "유튜브 문구 쓰기", "probe": "업로드 창 확인", "all": "전체 1→6", "prep": "개작·대본만", "make": "목소리→썸네일", "s0-rewrite": "안전 개작", "s1-script": "대본·채점",
          "s2-tts": "목소리", "s3-images": "그림(Codex)", "s4-render": "영상 굽기", "s5-thumb": "썸네일", "doctor": "점검"}
 
 app = FastAPI(title="aside-long")
@@ -255,7 +255,33 @@ def unit(name: str, sid: str) -> Dict[str, Any]:
         "contacts": [v(p) for p in sorted(out.glob("contact_*.jpg"))] if out.exists() else [],
         "youtube": yt.read_text(encoding="utf-8") if yt.exists() else "",
         "folder": str(u.dir),
+        "upload": _upload_info(job, sid, script),
     }
+
+
+def _upload_info(job: Job, sid: str, script: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    from ..youtube import meta
+    yt = (script or {}).get("youtube") or {}
+    m = meta(script, config.read_json(job.sub("audio", sid) / "timing.json")) if script else None
+    return {"meta": m, "ready": "hook_lines" in yt, "check": yt.get("check"),
+            "state": job.state().get(sid) or {}}
+
+
+@app.get("/api/accounts")
+def accounts_list() -> Dict[str, Any]:
+    from .. import accounts
+    return {"accounts": accounts.all_(), "current": config.local().get("current")}
+
+
+class AccReq(BaseModel):
+    name: str
+
+
+@app.post("/api/accounts/use")
+def accounts_use(req: AccReq) -> Dict[str, Any]:
+    from .. import accounts
+    accounts.set_current(req.name)
+    return {"ok": True}
 
 
 @app.put("/api/unit/{name}/{sid}/script")

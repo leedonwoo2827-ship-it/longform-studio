@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parent.parent
 JOBS = ROOT / "jobs"
 LOGS = ROOT / "logs"
 TEMPLATES = ROOT / "templates"
+PROFILES = ROOT / "profiles"
+LOCAL = ROOT / "local.json"
 FONTS = TEMPLATES / "fonts"
 # SuperTonic3 모델(약 380MB)은 쇼츠 프로젝트에 이미 받아 둔 것을 같이 쓴다 — 없으면 tts-setup 이 여기로 받는다
 SIBLING_SUPERTONIC = Path(r"D:\00work\261004-aside-youtube-claude\assets\supertonic")
@@ -28,7 +30,10 @@ DEFAULTS: Dict[str, Any] = {
     "render": {"w": 1920, "h": 1080, "fps": 30, "crf": 20, "preset": "medium",
                "image_h": 990, "caption_size": 68, "caption_font": "Pretendard SemiBold",
                "caption_margin": 34, "max_line_chars": 28, "fade": 0.5},
-    "ui": {"port": 5294},
+    # 업로드: 실제 Chrome(전용 프로필)에 CDP 로 붙어 YouTube Studio 를 조종한다(aside-youtube-claude 방식)
+    "youtube": {"chrome": "", "visibility": "public", "base_port": 9361, "ai_disclosure": True,
+                "pattern": "1-evening", "slots": ["19:00"], "weekend_slots": ["20:00"]},
+    "ui": {"port": 5294, "width": 460},
 }
 
 
@@ -63,6 +68,15 @@ def write_json(path: Path, data: Any) -> None:
 def load() -> Dict[str, Any]:
     cfg = deep_merge(DEFAULTS, read_json(ROOT / "aside.config.json", {}) or {})
     return deep_merge(cfg, read_json(ROOT / "aside.config.local.json", {}) or {})
+
+
+def local() -> Dict[str, Any]:
+    """PC별 상태(업로드 계정 목록 등) — git 제외."""
+    return read_json(LOCAL, {}) or {}
+
+
+def save_local(data: Dict[str, Any]) -> None:
+    write_json(LOCAL, data)
 
 
 def supertonic_dir() -> Path:

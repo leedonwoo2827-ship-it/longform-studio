@@ -6,6 +6,12 @@
   make      --job J [--only 1-1]                  대본 확인 뒤 딸깍: 목소리 → 그림 → 영상 → 썸네일
   prep      --job J                               모든 단원 개작·대본·채점만(그림 크레딧 아끼기)
   s0-rewrite | s1-script | s2-tts | s3-images [--scenes 3,7] | s4-render | s5-thumb   (단계별)
+올리기 (YouTube Studio — 실제 Chrome 전용 프로필)
+  account add <이름> [--label @채널] [--profile <Chrome 프로필 폴더>] [--port 9361] | account list | account use <이름> | account rm <이름>
+  login   [--account A]                 Chrome 에서 Google 로그인·채널 선택(한 번)
+  yt-meta --job J [--only 1-1] [--force]  유튜브 문구(제목·설명·해시태그·태그·고정 댓글)만 다시 쓰기
+  post    --job J --only 1-1 [--account A] [--at "2026-10-12 19:00"] [--visibility public|unlisted|private] [--dry-run] [--force]
+  probe   [--account A]                 업로드 창 구조 떠 두기(셀렉터 맞출 때)
 기타
   ui        대시보드 서버(브라우저 창)
   tts-setup SuperTonic3 모델·목소리 받기(쇼츠 프로젝트에 이미 있으면 그것을 같이 쓴다)
@@ -97,6 +103,62 @@ def _guard(what: str, fn) -> bool:
         return False
 
 
+def cmd_account(a) -> None:
+    from . import accounts
+    if a.action == "add":
+        acc = accounts.add(a.name, a.label or "", a.profile or "", a.port or 0)
+        log(f"계정 추가: {acc['name']} (포트 {acc['port']}) — 이제 `run.bat login --account {acc['name']}`")
+    elif a.action == "rm":
+        accounts.remove(a.name)
+    elif a.action == "use":
+        accounts.set_current(a.name)
+    cur = config.local().get("current")
+    for acc in accounts.all_():
+        log(f"  {'▶' if acc['name'] == cur else ' '} {acc['name']} {acc.get('label', '')} (포트 {acc['port']})")
+
+
+def cmd_post(a) -> None:
+    from . import accounts, youtube
+    from datetime import datetime
+    job = need(a.job)
+    acc = accounts.get(a.account)
+    vis = a.visibility or config.load()["youtube"].get("visibility", "public")
+    units = job.pick(_only(a.only)) if a.only else []
+    if not units:
+        raise SystemExit("--only 로 올릴 단원 하나를 고르세요")
+    for u in units:
+        sid = u.prefix
+        st = job.state().get(sid) or {}
+        if st.get("posted") and not a.force and not a.dry_run:
+            log(f"· {sid} 는 이미 올렸어요 ({(st['posted'] or {}).get('url', '')}). 다시 올리려면 --force")
+            continue
+        script = job.script(sid)
+        video = job.video(sid)
+        if not script or not video.exists():
+            raise SystemExit(f"{sid}: 대본이나 영상이 없습니다 — 먼저 영상을 만들어 주세요")
+        when = None
+        if a.at:
+            when = datetime.strptime(a.at.strip().replace("T", " ")[:16], "%Y-%m-%d %H:%M")
+        timing = config.read_json(job.sub("audio", sid) / "timing.json")
+        thumb = job.sub("out", sid) / f"{sid}_thumb.jpg"
+        log(f"▶ {sid} " + ("미리 채워 보기" if a.dry_run else f"예약 공개({when:%m월 %d일 %H:%M})" if when else f"올리기({vis})")
+            + f" → {acc.get('label', acc['name'])}")
+        try:
+            res = youtube.upload(acc, script, video, timing=timing, thumb=thumb, when=when,
+                                 visibility=vis, dry_run=a.dry_run)
+        except youtube.PostError as e:
+            job.update_state(sid, {"error": str(e)[:300]})
+            raise SystemExit(f"✗ 올리지 못했어요: {e}")
+        if res.get("dry_run"):
+            continue
+        rec = {"account": acc["name"], **res}
+        patch = {"posted": rec, "error": None}
+        if when:
+            patch["scheduled"] = {"when": when.strftime("%Y-%m-%d %H:%M"), "account": acc["name"], "mode": "native"}
+        job.update_state(sid, patch)
+        log(f"✓ 올렸어요 — {res.get('url') or 'Studio 「콘텐츠」에서 확인'}")
+
+
 def cmd_doctor(_a=None) -> int:
     from . import s3_images, tts
     from .llm import claude_cli
@@ -134,6 +196,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         p.add_argument("--force", action="store_true")
         if name == "s3-images":
             p.add_argument("--scenes", help="다시 그릴 씬 번호(예: 3,7)")
+    p = sub.add_parser("account")
+    p.add_argument("action", choices=["add", "list", "use", "rm"])
+    p.add_argument("name", nargs="?")
+    p.add_argument("--label")
+    p.add_argument("--profile")
+    p.add_argument("--port", type=int)
+    for name in ("login", "probe"):
+        p = sub.add_parser(name)
+        p.add_argument("--account")
+    p = sub.add_parser("post")
+    p.add_argument("--job")
+    p.add_argument("--only")
+    p.add_argument("--account")
+    p.add_argument("--at")
+    p.add_argument("--visibility", choices=["public", "unlisted", "private"])
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--force", action="store_true")
+    p = sub.add_parser("yt-meta")
+    p.add_argument("--job")
+    p.add_argument("--only")
+    p.add_argument("--force", action="store_true")
     sub.add_parser("ui")
     sub.add_parser("tts-setup")
     sub.add_parser("doctor")
@@ -157,6 +240,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if a.cmd == "doctor":
         return cmd_doctor()
+    if a.cmd == "account":
+        cmd_account(a)
+        return 0
+    if a.cmd in ("login", "probe"):
+        from . import accounts, youtube
+        acc = accounts.get(a.account)
+        youtube.open_login(acc) if a.cmd == "login" else youtube.probe(acc)
+        return 0
+    if a.cmd == "post":
+        return 0 if _guard("올리기", lambda: cmd_post(a)) else 1
+    if a.cmd == "yt-meta":
+        from . import ytmeta
+        return 0 if _guard("유튜브 문구", lambda: ytmeta.run(need(a.job), only=_only(a.only), force=a.force)) else 1
     job = need(a.job)
     only = _only(a.only)
     kw = {"only": only, "force": a.force}

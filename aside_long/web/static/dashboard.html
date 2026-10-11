@@ -212,10 +212,10 @@ function renderMain() {
       <button onclick="stopRun()">■ 멈춤</button>
     </div>
     <div class="tabs">
-      ${[['src', '원고·개작'], ['script', '대본'], ['img', '그림'], ['vid', '영상']].map(([k, t]) => `<button class="${TAB === k ? 'on' : ''}" onclick="TAB='${k}';renderMain()">${t}</button>`).join('')}
+      ${[['src', '원고·개작'], ['script', '대본'], ['img', '그림'], ['vid', '영상'], ['up', '유튜브 올리기']].map(([k, t]) => `<button class="${TAB === k ? 'on' : ''}" onclick="TAB='${k}';renderMain()">${t}</button>`).join('')}
     </div>
     <div id="tab"></div>`;
-  ({src: tabSrc, script: tabScript, img: tabImg, vid: tabVid})[TAB]();
+  ({src: tabSrc, script: tabScript, img: tabImg, vid: tabVid, up: tabUp})[TAB]();
 }
 
 function tabSrc() {
@@ -324,6 +324,47 @@ function tabVid() {
     <h3>검수 시트 (5초 간격)</h3>
     ${U.contacts.map(c => `<a href="${c}" target="_blank"><img src="${c}" style="width:100%;border-radius:8px;margin-bottom:8px"></a>`).join('')}`
     : '<div class="empty">아직 영상이 없어요 — 「5 영상」을 눌러 주세요.</div>';
+}
+let ACCS = null;
+async function tabUp() {
+  const up = U.upload || {}, m = up.meta, st = up.state || {};
+  if (!ACCS) ACCS = await api('/api/accounts');
+  const accOpts = ACCS.accounts.map(a => `<option value="${esc(a.name)}" ${a.name === ACCS.current ? 'selected' : ''}>${esc(a.label || a.name)}</option>`).join('');
+  const posted = st.posted;
+  const copy = (id, label) => `<button onclick="navigator.clipboard.writeText(document.getElementById('${id}').value)">${label} 복사</button>`;
+  $('#tab').innerHTML = `
+    ${posted ? `<p>${pill(st.scheduled ? '예약 공개 ' + esc(st.scheduled.when) : '올림', 'ok')} <a href="${esc(posted.url || '#')}" target="_blank">${esc(posted.url || '')}</a> <span class="muted">${esc(posted.at || '')}</span></p>` : ''}
+    ${st.error ? `<p style="color:var(--bad)">지난 시도 실패: ${esc(st.error)}</p>` : ''}
+    <div class="row" style="margin-bottom:10px">
+      <label style="margin:0">채널</label><select id="upAcc" style="width:auto" onchange="api('/api/accounts/use',{method:'POST',body:JSON.stringify({name:this.value})}).then(()=>ACCS=null)">${accOpts || '<option>계정 없음</option>'}</select>
+      <label style="margin:0">공개</label><select id="upVis" style="width:auto"><option value="public">공개</option><option value="unlisted">일부 공개</option><option value="private">비공개</option></select>
+      <label style="margin:0">예약</label><input id="upAt" type="datetime-local" style="width:auto">
+    </div>
+    <div class="row">
+      <button data-run onclick="runPlain(['login','--account',$('#upAcc').value])">① 로그인 창 열기</button>
+      <button data-run onclick="runCmd('yt-meta',['--force'])">문구 다시 쓰기 (Claude)</button>
+      <button data-run onclick="post(true)">미리 채워 보기</button>
+      <button class="pri" data-run onclick="post(false)" ${U.video ? '' : 'disabled'}>▶ 유튜브에 올리기</button>
+    </div>
+    <p class="muted">왼쪽에 뜨는 Chrome(로그인된 전용 프로필)에서 YouTube Studio 가 자동으로 채워져요: 영상 → 제목·설명 → 썸네일 → 태그 → AI 사용 표시 → 아동용 아님 → 공개/예약 → 고정 댓글(공개일 때). 「미리 채워 보기」는 게시 버튼만 누르지 않아요.</p>
+    ${!m ? '<div class="empty">대본이 있어야 문구가 생겨요.</div>' : `
+    ${!up.ready ? '<p style="color:var(--warn)">아직 유튜브 문구를 쓰지 않았어요 — 「문구 다시 쓰기」를 눌러 주세요(지금은 대본의 기본 제목·설명).</p>' : ''}
+    ${up.check ? pill(up.check.passed ? '원고 겹침 검사 통과' : '원고 겹침 ' + up.check.problems.length + '건', up.check.passed ? 'ok' : 'warn') : ''}
+    <h3>제목 ${copy('ytT', '')}</h3><textarea id="ytT" rows="1" readonly>${esc(m.title)}</textarea>
+    <h3>설명 ${copy('ytD', '')}</h3><textarea id="ytD" rows="16" readonly>${esc(m.description)}</textarea>
+    <h3>태그 ${copy('ytG', '')}</h3><textarea id="ytG" rows="2" readonly>${esc(m.tags.join(', '))}</textarea>
+    <h3>고정 댓글 ${copy('ytC', '')}</h3><textarea id="ytC" rows="1" readonly>${esc(m.pinned_comment)}</textarea>
+    ${U.thumb ? `<h3>썸네일</h3><img src="${U.thumb}" style="width:360px;border-radius:8px">` : ''}`}`;
+}
+async function runPlain(args) { await api('/api/run', {method: 'POST', body: JSON.stringify({args})}); refresh() }
+async function post(dry) {
+  const at = $('#upAt').value, vis = $('#upVis').value, acc = $('#upAcc').value;
+  const what = dry ? '업로드 창을 채워만 볼까요? (게시는 안 눌러요)' : at ? `${at.replace('T', ' ')} 에 예약 공개로 올릴까요?` : `지금 「${vis === 'public' ? '공개' : vis === 'unlisted' ? '일부 공개' : '비공개'}」로 올릴까요?`;
+  if (!confirm(`${acc} 채널 — ${what}`)) return;
+  const args = ['--account', acc, '--visibility', vis];
+  if (at) args.push('--at', at.replace('T', ' '));
+  if (dry) args.push('--dry-run');
+  await runCmd('post', args);
 }
 async function openFolder() { await api('/api/open', {method: 'POST', body: JSON.stringify({path: U.folder})}) }
 

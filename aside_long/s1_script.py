@@ -155,9 +155,7 @@ def run(job: Job, only=None, force: bool = False, **_) -> None:
         config.write_json(u.script_dir / "_s1.json", {"hash": u.hash, "source": u.source.name})
         if job.edit_path(sid).exists():
             log("  △ 사람이 고친 대본(.edit.json)이 있어 그것이 계속 쓰여요. 새 대본을 쓰려면 대시보드에서 「수정 되돌리기」.")
-        out = job.sub("out", sid)
-        out.mkdir(parents=True, exist_ok=True)
-        yt = res.get("youtube") or {}
-        (out / f"{sid}_youtube.txt").write_text(f"{yt.get('title', '')}\n\n{yt.get('description', '')}\n", encoding="utf-8")
         log(f"  ✓ {sid} 대본 완료 — {res.get('title', '')} ({sc['score']}점)")
         styles.write_handoff(job, sid, res)
+        from . import ytmeta     # 대본 다음 바로 유튜브 업로드 문구(제목·설명·해시태그·태그·고정 댓글)
+        ytmeta.write(job, u, model)

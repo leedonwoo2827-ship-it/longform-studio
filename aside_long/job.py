@@ -2,6 +2,7 @@
 
 jobs/<job>/
   job.json · job.local.json      시리즈 이름·화풍·목소리·목표 길이 (local 은 PC별 덮어쓰기)
+  state.json                     업로드·예약 기록
   1-1_선사 문화와 국가의 출현/   ← 단원 하나 (영상 번호 = 단원 번호 "1-1")
     01_raw/       원본 docx (보관만)
     02_rewrite/   안전 개작 docx + sections.json + 검증.json        s0-rewrite
@@ -10,6 +11,7 @@ jobs/<job>/
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -19,6 +21,7 @@ from . import config
 from .manuscript import Unit, units_in
 
 BUNDLE_KINDS = ("audio", "images", "out")
+_STATE_LOCK = threading.Lock()
 
 
 @dataclass
@@ -100,6 +103,23 @@ class Job:
 
     def video(self, sid: str) -> Path:
         return self.sub("out", sid) / f"{sid}.mp4"
+
+    # ── 업로드 상태 (state.json — {id: {posted, scheduled, error}}) ─────────────
+    def state(self) -> Dict[str, Any]:
+        return config.read_json(self.dir / "state.json", {}) or {}
+
+    def update_state(self, sid: str, patch: Dict[str, Any]) -> Dict[str, Any]:
+        with _STATE_LOCK:
+            st = self.state()
+            cur = dict(st.get(sid) or {})
+            for k, v in patch.items():
+                if v is None:
+                    cur.pop(k, None)
+                else:
+                    cur[k] = v
+            st[sid] = cur
+            config.write_json(self.dir / "state.json", st)
+            return cur
 
     def url(self, path: Path) -> str:
         """대시보드 서버 주소 (/jobs/…)"""

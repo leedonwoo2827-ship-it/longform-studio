@@ -6,3 +6,5 @@ assets/
 aside.config.local.json
 _context/
 *.tmp
+profiles/
+local.json
