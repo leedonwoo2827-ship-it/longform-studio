@@ -4,7 +4,7 @@
   개념어는 유지, 사례는 다른 사례로 교체, 문장은 전부 새로 — 원문과 전혀 다른 글.
 검증은 코드가 한다(통과 못 하면 문제를 붙여 한 번 더 맡긴다):
   · 원문과 띄어쓰기 빼고 MAX_RUN(15)자 넘게 같은 구간 없음 · 문단 유사도 SIM_MAX(0.5) 이하
-  · 핵심 개념어 전부 보존 · 소제목 2~8개, 소제목마다 2~6문단
+  · 핵심 개념어 전부 보존 · 소제목 2~12개, 소제목마다 2~6문단
 결과:
   02_rewrite/<원본 이름>.docx   소제목(굵게)+문단 — 사람이 읽고 고쳐도 됨
   02_rewrite/sections.json      대본(s1)·유튜브 설명이 읽는 구조화 본(사람이 docx 를 고치면 docx 가 이긴다 — 아래 load_sections)
@@ -66,8 +66,8 @@ def check(orig: List[str], res: Dict[str, Any]) -> tuple:
     rows = []
     src = "\n".join(orig)
     secs = res.get("sections") or []
-    if not 2 <= len(secs) <= 8:
-        probs.append(f"소제목은 2~8개여야 합니다(지금 {len(secs)}개)")
+    if not 2 <= len(secs) <= 12:
+        probs.append(f"소제목은 2~12개여야 합니다(지금 {len(secs)}개)")
     for si, s in enumerate(secs, 1):
         if not _LABEL.match(s.get("label", "")):
             probs.append(f"{si}번째 소제목 label 은 \"({si}) 이름\" 꼴로")

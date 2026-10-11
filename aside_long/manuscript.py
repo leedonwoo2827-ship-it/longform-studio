@@ -112,6 +112,14 @@ class Unit:
         return self.dir.name
 
 
+def _unit_info(d: Path) -> dict:
+    import json
+    try:
+        return json.loads((d / "unit.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def units_in(job_dir: Path) -> List[Unit]:
     out = []
     if not job_dir.exists():
@@ -124,6 +132,9 @@ def units_in(job_dir: Path) -> List[Unit]:
         any_doc = (_docs_in(d / RAW) or _docs_in(d / REWRITE) or [None])[0]
         meta = parse_name(any_doc.stem) if any_doc else None
         ch, sec = (meta[1], meta[2]) if meta else ("", m.group(3))
+        info = _unit_info(d)
+        if info.get("title"):       # 묶은 단원·책에서 나눈 단원 — 폴더 이름(40자로 잘림) 대신 저장해 둔 제목
+            sec = info["title"]
         out.append(Unit(d, prefix, ch, sec))
     return out
 
@@ -197,7 +208,120 @@ def place_book(job_dir: Path, file: Path, stage: str) -> List[Path]:
             d.add_heading(t, level=2) if kind == "h2" else d.add_paragraph(t)
         f = split / f"주제{num:02d}{tag}.docx"
         d.save(str(f))
-        outs.append(place(job_dir, f, stage, prefix=f"{book}-{num}", title=title))
+        out = place(job_dir, f, stage, prefix=f"{book}-{num}", title=title)
+        _write_info(out.parent.parent, {"title": title, "members": [{"prefix": f"{book}-{num}", "title": title,
+                                                                     "file": str(f), "stage": stage}]})
+        outs.append(out)
+    return outs
+
+
+def _write_info(d: Path, info: dict) -> None:
+    import json
+    (d / "unit.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+# ── 원고 분석 · 합치기 ─────────────────────────────────────────────────────────
+def clamp_minutes(est: float, lo: float, hi: float) -> float:
+    """대본 목표 길이 = 원고가 허락하는 길이를 [lo, hi] 안으로 — 짧은 원고는 lo 까지 풀어 쓰고, 긴 원고는 hi 로 압축."""
+    return max(lo, min(hi, est))
+
+
+def est_minutes(chars: int, expand: float, cps: float) -> float:
+    """원고 글자 수 → 지어내지 않고 풀어 읽을 때의 영상 길이(분). 내레이션 ≈ 원고 × expand, TTS 초당 cps 자."""
+    return chars * expand / cps / 60
+
+
+def propose_groups(rows: List[dict], lo: float, hi: float) -> List[List[str]]:
+    """앞에서부터 이어 붙여 [lo, hi]분에 들도록 묶는다. 이미 lo 이상인 단원은 혼자. 끝에 짧게 남으면 앞 묶음에 붙인다."""
+    groups: List[List[dict]] = []
+    cur: List[dict] = []
+    for r in rows:
+        now = sum(x["min"] for x in cur)
+        if cur and now + r["min"] > hi * (1.15 if now < lo else 1.0):     # 아직 목표 미달이면 조금 넘쳐도 붙인다
+            groups.append(cur)
+            cur = []
+        cur.append(r)
+        if sum(x["min"] for x in cur) >= lo:
+            groups.append(cur)
+            cur = []
+    if cur:
+        if groups and sum(x["min"] for x in cur) < lo * 0.6:
+            groups[-1] += cur
+        else:
+            groups.append(cur)
+    return [[x["prefix"] for x in g] for g in groups]
+
+
+def merge_units(job_dir: Path, prefixes: List[str], force: bool = False) -> Path:
+    """단원 여러 개 → 영상 한 편. 각 주제는 Heading 1 로 남아 개작·대본에서 장(chapter)이 된다.
+    이미 개작·대본이 있는 단원은 force 일 때만(그 결과는 버린다 — 원고가 바뀌니까)."""
+    import shutil
+    import docx
+    us = {u.prefix: u for u in units_in(job_dir)}
+    sel = [us[p] for p in prefixes if p in us]
+    if len(sel) < 2:
+        raise SystemExit("묶으려면 단원을 둘 이상 고르세요")
+    sel.sort(key=lambda u: [int(x) for x in u.prefix.split("-")])
+    done = [u.prefix for u in sel if (u.dir / REWRITE).exists() or (u.dir / SCRIPT).exists()]
+    if done and not force:
+        raise SystemExit(f"이미 개작·대본이 있는 단원이 있어요({', '.join(done)}) — 묶으면 그 결과는 지워져요")
+    members = []
+    keep = job_dir / "_inbox" / "split"
+    keep.mkdir(parents=True, exist_ok=True)
+    for u in sel:
+        info = _unit_info(u.dir)
+        if not info.get("members"):     # 이 기능 전에 넣은 단원 — 원고를 _inbox/split 에 남겨 두고 풀 때 쓴다
+            kept = keep / u.raw.name
+            if not kept.exists():
+                shutil.copy2(u.raw, kept)
+            info["members"] = [{"prefix": u.prefix, "title": u.section, "file": str(kept), "stage": "raw"}]
+        members += info["members"]
+    d = docx.Document()
+    for u in sel:
+        src = docx.Document(str(u.raw))
+        first = True
+        for p in src.paragraphs:
+            t = p.text.strip()
+            if not t:
+                continue
+            style = (p.style.name or "").lower()
+            if style.startswith("heading 1") or first and _TOPIC.match(t):
+                d.add_heading(t, level=1)
+            elif style.startswith("heading 2"):
+                d.add_heading(t, level=2)
+            else:
+                d.add_paragraph(t)
+            first = False
+    nums = [m["prefix"].split("-")[1] for m in members]
+    title = " · ".join(m["title"] for m in members)
+    mdir = job_dir / "_inbox" / "merged"
+    mdir.mkdir(parents=True, exist_ok=True)
+    f = mdir / f"주제{int(nums[0]):02d}-{int(nums[-1]):02d}.docx"
+    d.save(str(f))
+    for u in sel:
+        shutil.rmtree(u.dir)
+    out = place(job_dir, f, "raw", prefix=sel[0].prefix, title=title)
+    _write_info(out.parent.parent, {"title": title, "members": members})
+    return out.parent.parent
+
+
+def unmerge_unit(job_dir: Path, prefix: str, force: bool = False) -> List[Path]:
+    """묶음 풀기 — 저장해 둔 주제별 원고로 다시 단원 여러 개."""
+    import shutil
+    u = next((x for x in units_in(job_dir) if x.prefix == prefix), None)
+    if not u:
+        raise SystemExit(f"단원이 없어요: {prefix}")
+    members = _unit_info(u.dir).get("members") or []
+    if len(members) < 2:
+        raise SystemExit("묶은 단원이 아니에요")
+    if ((u.dir / REWRITE).exists() or (u.dir / SCRIPT).exists()) and not force:
+        raise SystemExit("이미 개작·대본이 있어요 — 풀면 그 결과는 지워져요")
+    shutil.rmtree(u.dir)
+    outs = []
+    for m in members:
+        out = place(job_dir, Path(m["file"]), m.get("stage", "raw"), prefix=m["prefix"], title=m["title"])
+        _write_info(out.parent.parent, {"title": m["title"], "members": [m]})
+        outs.append(out.parent.parent)
     return outs
 
 

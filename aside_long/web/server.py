@@ -138,6 +138,8 @@ def state() -> Dict[str, Any]:
     for j in all_jobs():
         jobs.append({"name": j.name, "title": j.get("title", j.name),
                      "settings": {"style": j.setting("long", "style"), "target_minutes": j.setting("long", "target_minutes"),
+                                  "target_max_minutes": j.setting("long", "target_max_minutes"),
+                                  "confirmed": bool(j.get("long.plan_confirmed")),
                                   "voice": j.setting("tts", "voice"), "speed": j.setting("tts", "speed"),
                                   "thumb_scene": j.get("long.thumb_scene") or 1},
                      "units": [_unit_status(j, u) for u in j.units]})
@@ -155,10 +157,111 @@ def skeleton(name: str) -> Dict[str, Any]:
         heads: List[str] = []
         if u.raw and u.raw.suffix.lower() == ".docx":
             import docx
-            heads = [p.text.strip() for p in docx.Document(str(u.raw)).paragraphs
-                     if (p.style.name or "").lower().startswith("heading 2") and p.text.strip()]
-        out.append({"prefix": u.prefix, "section": u.section, "heads": heads, "chars": _raw_chars(u)})
+            from ..manuscript import _unit_info
+            merged = len(_unit_info(u.dir).get("members") or []) > 1
+            for p in docx.Document(str(u.raw)).paragraphs:
+                st, t = (p.style.name or "").lower(), p.text.strip()
+                if t and st.startswith("heading 2"):
+                    heads.append(t)
+                elif t and merged and st.startswith("heading 1"):
+                    heads.append("■ " + t)          # 묶은 단원 — 주제 경계
+        from ..manuscript import _unit_info as _ui
+        out.append({"prefix": u.prefix, "section": u.section, "heads": heads, "chars": _raw_chars(u),
+                    "members": len(_ui(u.dir).get("members") or []) or 1})
     return {"units": out, "title": job.get("title", name)}
+
+
+@app.get("/api/analyze/{name}")
+def analyze(name: str) -> Dict[str, Any]:
+    """원고 분석 — 단원마다 글자 수·예상 길이, 목표(분)와 비교한 판단, 추천 묶음."""
+    from ..manuscript import _unit_info, est_minutes, propose_groups
+    job = _job(name)
+    lo = float(job.setting("long", "target_minutes"))
+    hi = float(job.setting("long", "target_max_minutes") or lo + 5)
+    expand = float(job.setting("long", "natural_expand") or 1.4)
+    cps = float(job.setting("long", "chars_per_sec"))
+    rows = []
+    for u in job.units:
+        c = _raw_chars(u)
+        rows.append({"prefix": u.prefix, "section": u.section, "chars": c,
+                     "min": round(est_minutes(c, expand, cps), 1),
+                     "members": len(_unit_info(u.dir).get("members") or []) or 1,
+                     "started": (u.dir / "02_rewrite").exists() or (u.dir / "03_script").exists()})
+    if not rows:
+        return {"rows": [], "groups": [], "lo": lo, "hi": hi}
+    total = sum(r["chars"] for r in rows)
+    mins = [r["min"] for r in rows]
+    avg = sum(mins) / len(mins)
+    short = [r for r in rows if r["min"] < lo * 0.8]
+    long_ = [r for r in rows if r["min"] > hi * 1.3]
+    groups = propose_groups(rows, lo, hi)
+    by = {r["prefix"]: r for r in rows}
+    gview = [{"prefixes": g, "chars": sum(by[x]["chars"] for x in g), "min": round(sum(by[x]["min"] for x in g), 1),
+              "titles": [by[x]["section"] for x in g]} for g in groups]
+    merges = sum(1 for g in groups if len(g) > 1)
+    already = sum(1 for r in rows if r["members"] > 1)
+    out_of = sum(1 for r in rows if not lo * 0.8 <= r["min"] <= hi * 1.3)
+    if already or job.get("long.plan_confirmed"):
+        verdict = (f"지금 구성: {len(rows)}편 · 편당 평균 {avg:.0f}분" + (f" ({already}편이 묶음)" if already else "")
+                   + (f" — 목표({lo:g}~{hi:g}분)에서 많이 벗어난 편 {out_of}개" if out_of else f" — 모두 목표({lo:g}~{hi:g}분) 근처예요."))
+    elif not short:
+        verdict = f"단원 대부분이 그대로 {lo:g}~{hi:g}분에 맞아요 — 합치지 않아도 돼요."
+    elif merges:
+        verdict = (f"단원 하나로는 평균 {avg:.0f}분이라 목표({lo:g}~{hi:g}분)보다 짧아요 — "
+                   f"이웃한 단원을 묶으면 {len(rows)}편 → {len(groups)}편, 편당 {lo:g}~{hi:g}분에 맞아요(추천).")
+    else:
+        verdict = f"짧은 단원이 있지만 묶을 짝이 마땅치 않아요 — 그대로 만들면 일부는 {lo:g}분보다 짧아요."
+    for r in rows:      # 대본이 실제로 목표로 삼을 길이(원고 길이를 목표 범위 안으로)
+        r["target"] = round(max(lo, min(hi, r["min"])), 1)
+    return {"rows": rows, "total_chars": total, "avg_min": round(avg, 1), "lo": lo, "hi": hi,
+            "short": len(short), "long": len(long_), "groups": gview, "merges": merges, "verdict": verdict,
+            "basis": f"원고 1자 ≈ 내레이션 {expand:g}자, 목소리 초당 {cps:g}자로 계산 — 지어내지 않고 풀어 읽을 때의 길이예요."}
+
+
+class MergeReq(BaseModel):
+    prefixes: List[str] = []
+    groups: List[List[str]] = []
+    force: bool = False
+
+
+@app.post("/api/job/{name}/merge")
+def merge(name: str, req: MergeReq) -> Dict[str, Any]:
+    """prefixes 하나를 묶거나, groups(추천 묶음) 여러 개를 한 번에."""
+    from ..manuscript import merge_units
+    job = _job(name)
+    if RUN.busy:
+        raise HTTPException(409, "작업이 도는 중에는 묶을 수 없어요")
+    groups = [g for g in (req.groups or [req.prefixes]) if len(g) > 1]
+    made = []
+    try:
+        for g in groups:
+            made.append(merge_units(job.dir, g, force=req.force).name)
+    except SystemExit as e:
+        raise HTTPException(400, str(e.code))
+    RUN.add(f"단원을 묶었어요: {len(made)}편 — " + ", ".join(made[:4]) + (" …" if len(made) > 4 else ""))
+    return {"ok": True, "made": made}
+
+
+class UnmergeReq(BaseModel):
+    prefixes: List[str]
+    force: bool = False
+
+
+@app.post("/api/job/{name}/unmerge")
+def unmerge(name: str, req: UnmergeReq) -> Dict[str, Any]:
+    from ..manuscript import _unit_info, unmerge_unit
+    job = _job(name)
+    if RUN.busy:
+        raise HTTPException(409, "작업이 도는 중에는 풀 수 없어요")
+    targets = req.prefixes or [u.prefix for u in job.units if len(_unit_info(u.dir).get("members") or []) > 1]
+    n = 0
+    try:
+        for p in targets:
+            n += len(unmerge_unit(job.dir, p, force=req.force))
+    except SystemExit as e:
+        raise HTTPException(400, str(e.code))
+    RUN.add(f"묶음을 풀었어요 → 단원 {n}개")
+    return {"ok": True}
 
 
 @app.delete("/api/job/{name}")
@@ -283,6 +386,10 @@ def settings(name: str, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
         lg["style"] = body["style"]
     if body.get("target_minutes"):
         lg["target_minutes"] = float(body["target_minutes"])
+    if body.get("target_max_minutes"):
+        lg["target_max_minutes"] = float(body["target_max_minutes"])
+    if "confirmed" in body:              # 영상 구성(묶기) 확정 — 확정 전에는 만들기 버튼을 막는다
+        lg["plan_confirmed"] = bool(body["confirmed"])
     if body.get("thumb_scene"):
         lg["thumb_scene"] = int(body["thumb_scene"])
     if body.get("voice") in tts.VOICES:

@@ -57,8 +57,11 @@ SCORE_SCHEMA: Dict[str, Any] = {
 
 
 def system_prompt(job: Job, source_chars: int) -> str:
-    minutes = float(job.setting("long", "target_minutes"))
+    from .manuscript import clamp_minutes, est_minutes
+    lo = float(job.setting("long", "target_minutes"))
+    hi = float(job.setting("long", "target_max_minutes") or lo + 5)
     cps = float(job.setting("long", "chars_per_sec"))
+    minutes = round(clamp_minutes(est_minutes(source_chars, float(job.setting("long", "natural_expand") or 1.4), cps), lo, hi), 1)
     target = int(minutes * 60 * cps)
     n_scenes = max(6, round(6 + (minutes * 60 - 60) / 22))
     detail(f"s1 목표 {minutes}분 · {target}자 · 씬 {n_scenes} (원고 {source_chars}자)")

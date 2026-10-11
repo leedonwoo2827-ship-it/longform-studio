@@ -23,7 +23,9 @@ DEFAULTS: Dict[str, Any] = {
     # 재집필·대본·채점은 Claude(구독 OAuth 로그인한 claude CLI), 그림은 Codex(ChatGPT 로그인한 codex CLI)
     "claude": {"script_model": "opus", "effort": "high", "timeout_sec": 1500, "retries": 1,
                "limit_wait_hours": 72, "limit_poll_min": 30},
-    "long": {"target_minutes": 15, "chars_per_sec": 4.5, "score_min": 80, "style": "textbook"},
+    # chars_per_sec: SuperTonic3 속도 1.0 실측 약 6자/초(2026-10-11, 8.6분·158문장). natural_expand: 원고를 지어내지 않고 풀어 읽을 때 내레이션 ≈ 원고 × 1.4
+    "long": {"target_minutes": 15, "target_max_minutes": 20, "chars_per_sec": 5.8, "natural_expand": 1.4,
+             "score_min": 80, "style": "textbook"},
     "tts": {"voice": "F4", "speed": 1.0, "gap": 0.35, "scene_gap": 0.8, "lead": 0.6, "tail": 1.5,
             "assets_dir": "", "timeout_sec": 900},
     "image": {"engine": "codex", "workers": 3, "timeout_sec": 600, "retries": 1},
