@@ -2,7 +2,7 @@
   "claude": { "script_model": "opus", "effort": "high" },
   "long": { "target_minutes": 15, "target_max_minutes": 20, "chars_per_sec": 5.8, "score_min": 80, "style": "textbook" },
   "tts": { "voice": "F4", "speed": 1.0 },
-  "image": { "engine": "codex", "workers": 3 },
+  "image": { "engine": "codex-api", "workers": 3, "wait_on_limit": true },
   "render": { "fps": 30, "crf": 20, "caption_size": 68, "caption_font": "Pretendard SemiBold" },
   "ui": { "port": 5294 }
 }

@@ -276,7 +276,7 @@ def delete_job(name: str) -> Dict[str, Any]:
 
 
 EDITABLE = {"render": ["caption_font", "caption_size", "image_h", "max_line_chars"],
-            "image": ["workers"], "youtube": ["visibility", "ai_disclosure"],
+            "image": ["workers", "engine", "wait_on_limit"], "youtube": ["visibility", "ai_disclosure"],
             "long": ["target_minutes", "style"], "tts": ["voice", "speed"]}
 
 
@@ -342,6 +342,19 @@ def codex_login() -> Dict[str, Any]:
     except RuntimeError as e:
         raise HTTPException(400, str(e))
     return {"ok": True}
+
+
+@app.post("/api/codex/quota")
+def codex_quota() -> Dict[str, Any]:
+    """5시간·7일 한도 — 아주 짧은 글 요청 하나(그림 없음)를 보내 응답 헤더로 읽는다."""
+    from .. import codex_api
+    try:
+        lim = codex_api.probe()
+    except codex_api.NotAuthenticated as e:
+        raise HTTPException(401, str(e))
+    except Exception as e:      # noqa: BLE001
+        raise HTTPException(502, f"한도를 읽지 못했어요: {str(e)[:200]}")
+    return {"limits": lim, "line": codex_api.limits_line()}
 
 
 @app.post("/api/codex/cancel")

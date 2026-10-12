@@ -453,7 +453,9 @@ async function pageSet() {
           <div style="flex:1"><label>자막 크기(px)</label><input id="gSz" type="number" value="${cfg.render.caption_size}"></div>
           <div style="flex:1"><label>줄당 글자</label><input id="gMl" type="number" value="${cfg.render.max_line_chars}"></div></div>
         <div class="row"><div style="flex:1"><label>그림 높이(px, 최대 1080)</label><input id="gIh" type="number" value="${cfg.render.image_h}"></div>
-          <div style="flex:1"><label>Codex 동시 개수</label><input id="gW" type="number" min="1" max="6" value="${cfg.image.workers}"></div></div>
+          <div style="flex:1"><label>그림 동시 장수</label><input id="gW" type="number" min="1" max="6" value="${cfg.image.workers}"></div></div>
+        <div class="row"><div style="flex:1"><label>그림 엔진</label><select id="gEng">${opt([['codex-api', 'Codex 직접 — 그림 요청만 (권장, 한도 적게 씀)'], ['codex-cli', 'codex exec — 예전 방식 (예비)']], cfg.image.engine)}</select></div>
+          <div style="flex:1"><label>한도에 걸리면</label><select id="gWait">${opt([['true', '풀릴 때까지 기다렸다 이어 그리기'], ['false', '멈추기']], cfg.image.wait_on_limit)}</select></div></div>
         <div class="row"><div style="flex:1"><label>기본 목표 길이(분)</label><input id="gM" type="number" value="${cfg.long.target_minutes}"></div>
           <div style="flex:1"><label>기본 화풍</label><select id="gS">${opt(sty, cfg.long.style)}</select></div></div>
         <div class="row"><div style="flex:1"><label>기본 목소리</label><select id="gV">${opt(voi, cfg.tts.voice)}</select></div>
@@ -481,14 +483,26 @@ async function codexCard() {
       <tr><td class="muted">상태</td><td>${!c.installed ? pill('codex 없음', 'bad') : c.logging_in ? pill('로그인 진행 중 — 브라우저를 확인하세요', 'warn') : c.logged_in ? pill('로그인됨', 'ok') : pill('로그인 안 됨', 'bad')}</td></tr>
       <tr><td class="muted">계정</td><td>${esc(c.email || '—')}</td></tr>
       <tr><td class="muted">요금제</td><td>${esc(plan)}${c.workspace ? ' ' + pill('회사 크레딧을 써요', 'warn') : ''}${c.until ? ` <span class="muted">· ${esc(String(c.until).slice(0, 10))}까지</span>` : ''}</td></tr>
+      <tr><td class="muted">한도</td><td id="cxQuota"><span class="muted">「한도 확인」을 누르면 5시간·7일 한도를 읽어요(그림 없는 아주 짧은 요청 1번)</span></td></tr>
     </table>
     <div class="row" style="margin-top:10px">
       ${c.logging_in ? `<button onclick="codexAct('cancel')">로그인 취소</button>`
         : `<button class="pri" onclick="codexAct('login')" ${!c.installed ? 'disabled' : ''}>${c.logged_in ? '다른 계정으로 로그인' : '로그인 (ChatGPT)'}</button>`}
       <button onclick="codexAct('logout')" ${!c.logged_in || c.logging_in ? 'disabled' : ''}>로그아웃</button>
       <button onclick="codexCard()">새로고침</button>
+      <button onclick="codexQuota()" ${!c.logged_in ? 'disabled' : ''}>한도 확인</button>
     </div>
     <p class="muted">「로그인」을 누르면 브라우저가 열려요. ChatGPT 계정으로 로그인한 뒤 「새로고침」을 눌러 계정·요금제를 확인하세요. 그림을 그리는 중에는 바꿀 수 없어요.</p>`;
+}
+async function codexQuota() {
+  const el = $('#cxQuota'); if (!el) return;
+  el.innerHTML = '<span class="muted">확인 중…</span>';
+  try {
+    const q = await api('/api/codex/quota', {method: 'POST'}), L = q.limits || {};
+    const bar = u => u == null ? '?' : `<b>${Math.max(0, 100 - u).toFixed(0)}%</b> 남음`;
+    const at = sec => sec == null ? '' : ` · ${new Date(Date.now() + sec * 1000).toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit'})} 리셋`;
+    el.innerHTML = `5시간 ${bar(L.used_5h)}${at(L.reset_5h_sec)} &nbsp;|&nbsp; 7일 ${bar(L.used_7d)}${L.plan ? ` <span class="muted">(${esc(L.plan)})</span>` : ''}`;
+  } catch (e) { el.innerHTML = '<span style="color:var(--bad)">읽지 못했어요</span>' }
 }
 async function codexAct(act) {
   if (act === 'logout' && !confirm('Codex 에서 로그아웃할까요? (그림을 그리려면 다시 로그인해야 해요)')) return;
@@ -514,7 +528,7 @@ async function delJob() {
 async function saveCfg() {
   await api('/api/config', {method: 'PUT', body: JSON.stringify({
     render: {caption_font: $('#gF').value, caption_size: +$('#gSz').value, max_line_chars: +$('#gMl').value, image_h: Math.min(1080, +$('#gIh').value)},
-    image: {workers: +$('#gW').value}, long: {target_minutes: +$('#gM').value, style: $('#gS').value},
+    image: {workers: +$('#gW').value, engine: $('#gEng').value, wait_on_limit: $('#gWait').value === 'true'}, long: {target_minutes: +$('#gM').value, style: $('#gS').value},
     tts: {voice: $('#gV').value, speed: +$('#gSp').value},
     youtube: {visibility: $('#gVis').value, ai_disclosure: $('#gAi').value === 'true'}})});
   alert('저장했어요');

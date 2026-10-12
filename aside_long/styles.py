@@ -45,17 +45,32 @@ def preset(job: Job) -> Dict[str, str]:
     return PRESETS.get(str(job.setting("long", "style")), PRESETS["textbook"])
 
 
+# 모든 컷에 붙는 금지어 — 그림 도구에 negative 칸이 없어 프롬프트 끝에 「Avoid: …」로 붙인다(backplate compose_prompt 방식)
+NEGATIVE = ("text, letters, numbers, captions, labels, signage, signature, watermark, logo, speech bubble, frame, border, "
+            "photorealistic photo, 3d render, real or famous person's face, modern objects, anachronism, "
+            "extra fingers, extra limbs, distorted hands, deformed face, low quality, blurry, transparent background")
+
+
 def cut_prompt(job: Job, script: Dict[str, Any], scene: Dict[str, Any]) -> str:
-    """한 컷의 최종 영어 프롬프트 = 인물 고정 문장들 + 컷 묘사 + 화풍 문장."""
+    """한 컷의 최종 프롬프트 — backplate 식 한 줄 한 항목(인물/장면/구도/색·톤/글자/여백/규격). 모든 컷이 같은 줄 규칙을 받아 톤이 고르다."""
     looks = {c["id"]: c for c in script.get("characters") or []}
     im = scene.get("image") or {}
     who = [f"{looks[c]['name']} ({c}): {looks[c]['look']}" for c in im.get("chars") or [] if c in looks]
-    parts = []
+    lines = []
     if who:
-        parts.append("Characters in this cut — " + " | ".join(who))
-    parts.append("Scene: " + (im.get("prompt") or "").strip())
-    parts.append("Style: " + preset(job)["style"])
-    return "\n".join(parts)
+        lines.append("Characters (draw exactly as described; nobody else from the cast): " + " | ".join(who))
+    else:
+        lines.append("Characters: none of the recurring cast appear in this cut.")
+    lines += [
+        "Scene: " + (im.get("prompt") or "").strip(),
+        "Era: " + (script.get("topic") or "Korean history"),
+        "Art style: " + preset(job)["style"],
+        "Color/tone: consistent across the whole series — same palette, same brushwork, same lighting mood.",
+        "Text: absolutely no letters, numbers or labels anywhere in the image.",
+        "Layout: keep faces and key objects in the upper three quarters; the bottom fifth stays calm and simple (subtitles go there).",
+        "Format: 16:9 landscape illustration, full-bleed, opaque background.",
+    ]
+    return "\n".join(lines)
 
 
 def handoff(job: Job, script: Dict[str, Any]) -> str:

@@ -15,7 +15,7 @@
 | 1 안전 개작 | Claude 가 원문을 다른 글로 재집필. 코드가 검사: 원문과 15자 넘게 같은 구간 없음, 문단 유사도 ≤ 0.5, 핵심어 보존 (실패 시 2번까지 다시) | `02_rewrite/*.docx`, `sections.json`, `검증.json` |
 | 2 대본·채점 | 개작본으로 장→씬→문장 대본 + 인물 고정 문장 + 썸네일·유튜브 문구. 다른 Claude 가 100점 채점, 80점 미만이거나 원문 겹침이 있으면 한 번 고쳐 씀 | `03_script/<id>.json`, `채점.json` |
 | 3 목소리 | SuperTonic3 문장별 합성(문장 캐시 — 고친 문장만 다시) | `04_bundle/audio/narration.wav`, `timing.json` |
-| 4 그림 | 인계 메모 `images/HANDOFF.md` + 컷 프롬프트 → `codex exec` 3개 동시, 씬당 1장 | `04_bundle/images/NNN.png` |
+| 4 그림 | 이미지 JSON `images/prompts.json`(사람이 고쳐도 됨) → **Codex 직접 호출(그림 요청만, backplate onlycodex 방식)** 3장씩 동시, 한도에 걸리면 리셋까지 기다렸다 이어서 | `04_bundle/images/NNN.png`, `prompts.json` |
 | 5 영상 | ffmpeg: 켄번스 줌/팬 + 붓 가장자리 마스크 + 한지 바탕 + 고딕 자막(Pretendard SemiBold 68px), 씬별 클립 캐시 | `04_bundle/out/<id>.mp4`, `contact_NN.jpg` |
 | 6 썸네일 | 대표 그림 + 두 줄 문구(키워드 강조색) | `04_bundle/out/<id>_thumb.jpg` |
 
@@ -45,5 +45,7 @@ run.bat doctor
 ## 주의
 - 원문(01_raw)은 보관만 하고 대본 재료로 쓰지 않는다. 겹침·유사도 검사는 자동 장치이지 법적 판단이 아니다 — 최종 확인은 사람이.
 - 화풍은 글로만 정의한다. 교과서·다른 채널 그림을 참조 이미지로 넣지 않는다.
-- Codex 그림은 ChatGPT 계정 사용량을 쓴다. 바닥나면 「4 그림」이 바로 멈추고, 다시 누르면 남은 것만 이어서 그린다.
+- Codex 그림은 ChatGPT 계정의 5시간·7일 한도를 쓴다. 기본 엔진 `codex-api` 는 `~/.codex/auth.json` 토큰으로 Codex 백엔드에 그림 요청만 보내
+  `codex exec`(장당 1.5만~3.7만 토큰) 보다 한도를 훨씬 적게 쓴다. **비공식 내부 엔드포인트**라 막히면 설정에서 `codex-cli` 로.
+  한도에 걸리면 바로 멈추고(설정: 리셋까지 기다렸다 자동으로 이어 그리기), 설정 탭 「Codex 계정」에서 계정·요금제·한도를 본다.
 - 원고가 짧으면(예: 1,500자) 목표 길이에 못 미칠 수 있다 — 대본은 지어낸 사실 없이 원고가 허락하는 만큼만 늘린다.
