@@ -506,6 +506,34 @@ def _dialog_alive(page) -> bool:
         return True
 
 
+_FIND_TAGGED = """(function f(root){
+  const el = root.querySelector('[data-aside-file]'); if (el) return el;
+  for (const n of root.querySelectorAll('*')) if (n.shadowRoot) { const r = f(n.shadowRoot); if (r) return r; }
+  return null; })(document)"""
+
+
+def _set_files_cdp(s: Session, target, path: Path) -> None:
+    """파일 칸에 **경로만** 알려 주고 Chrome 이 디스크에서 직접 읽게 한다(CDP DOM.setFileInputFiles).
+
+    ★ Playwright 의 set_input_files 는 connect_over_cdp 로 붙은 Chrome 을 「다른 컴퓨터」로 보고 파일 내용을
+      실어 보내는데, **50MB 넘는 파일은 거부한다**(2026-10-12 실측: 롱폼 514MB 에서
+      "Cannot transfer files larger than 50Mb to a browser not co-located with the server"). 쇼츠는 작아서 몰랐다.
+      같은 PC 의 Chrome 이니 경로만 주면 크기 제한이 없다. change 이벤트도 Chrome 이 낸다."""
+    target.evaluate("el => { document.querySelectorAll('[data-aside-file]').forEach(x => x.removeAttribute('data-aside-file'));"
+                    " el.setAttribute('data-aside-file', '1') }")
+    cdp = s.ctx.new_cdp_session(s.page)
+    try:
+        oid = cdp.send("Runtime.evaluate", {"expression": _FIND_TAGGED})["result"].get("objectId")
+        if not oid:
+            raise PostError("파일 칸을 찾지 못했어요")
+        cdp.send("DOM.setFileInputFiles", {"files": [str(Path(path).resolve())], "objectId": oid})
+    finally:
+        try:
+            cdp.detach()
+        except Exception:       # noqa: BLE001
+            pass
+
+
 def _attach_video(s: Session, video: Path) -> bool:
     """업로드 창의 「파일 선택」 영역이 뜬 뒤 그 안의 칸에 넣고, 제목 칸이 뜨는지로 들어갔는지 확인한다.
     안 들어가면 「파일 선택」 버튼을 눌러 파일 선택 창으로 한 번 더. 파일이 안 들어갔으면 초안도 안 생긴다."""
@@ -519,12 +547,12 @@ def _attach_video(s: Session, video: Path) -> bool:
     for attempt in (1, 2):
         try:
             if attempt == 1:
-                page.locator(SEL["file"]).first.set_input_files(str(video))
+                _set_files_cdp(s, page.locator(SEL["file"]).first, video)
             else:
                 with page.expect_file_chooser(timeout=15_000) as fc:
                     btn = page.locator(SEL["select_btn"])
                     (btn.first if btn.count() else page.get_by_text(re.compile(r"^(파일 선택|Select files)$")).first).click()
-                fc.value.set_files(str(video))
+                _set_files_cdp(s, fc.value.element, video)
         except Exception as e:      # noqa: BLE001
             detail(f"  파일 넣기 {attempt}차 실패: {e}")
             continue
@@ -567,7 +595,9 @@ def _fill_tags(s: Session, tags: List[str]) -> bool:
 
 def _set_thumbnail(s: Session, thumb: Path) -> bool:
     try:
-        s.page.locator(SEL["thumb"]).first.set_input_files(str(thumb), timeout=15_000)
+        box = s.page.locator(SEL["thumb"]).first
+        box.wait_for(state="attached", timeout=15_000)
+        _set_files_cdp(s, box, thumb)
         time.sleep(3)
         log("  · 썸네일을 넣었어요")
         return True

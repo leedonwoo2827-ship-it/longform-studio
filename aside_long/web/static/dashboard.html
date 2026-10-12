@@ -701,6 +701,7 @@ async function tabUp() {
       <label style="margin:0">예약</label><input id="upAt" type="datetime-local" style="width:auto">
     </div>
     <div class="row">
+      <button onclick="api('/api/panel/open',{method:'POST'})" title="오른쪽에 좁은 올리기 패널(왼쪽은 YouTube Studio) — 쇼츠 프로그램과 같은 배치">사이드 패널 열기</button>
       <button data-run onclick="runPlain(['login','--account',$('#upAcc').value])">① 로그인 창 열기</button>
       <button data-run onclick="runCmd('yt-meta',['--force'])">문구 다시 쓰기 (Claude)</button>
       <button data-run onclick="post(true)">미리 채워 보기</button>

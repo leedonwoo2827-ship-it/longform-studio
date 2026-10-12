@@ -114,6 +114,9 @@ def _unit_status(job: Job, u) -> Dict[str, Any]:
             "script": bool(script), "edited": job.edit_path(sid).exists(), "score": sc.get("score"),
             "scenes": n, "images": imgs, "audio_min": round(timing.get("duration", 0) / 60, 1) if timing else 0,
             "video": video.exists(), "chars": len(u.text) if u.rewrite else _raw_chars(u),
+            "yt_title": ((script or {}).get("youtube") or {}).get("title") or (script or {}).get("title") or "",
+            "thumb": job.url(u.bundle_dir / "out" / f"{sid}_thumb.jpg") + f"?v={int((u.bundle_dir / 'out' / f'{sid}_thumb.jpg').stat().st_mtime)}"
+                     if (u.bundle_dir / "out" / f"{sid}_thumb.jpg").exists() else None,
             "posted": ((job.state().get(sid) or {}).get("posted") or {}).get("url") or None,
             "scheduled": ((job.state().get(sid) or {}).get("scheduled") or {}).get("when"),
             "upload_error": bool((job.state().get(sid) or {}).get("error"))}
@@ -497,6 +500,8 @@ def run(req: RunReq) -> Dict[str, Any]:
     if not req.args or req.args[0] not in ALLOWED:
         raise HTTPException(400, "허용되지 않은 명령이에요")
     RUN.start(req.args)
+    if req.args[0] in ("post", "login"):         # 원본처럼 — 왼쪽 YouTube Chrome, 오른쪽 좁은 올리기 패널
+        threading.Thread(target=open_panel, daemon=True).start()
     return {"ok": True}
 
 
@@ -709,6 +714,40 @@ def _port_free(port: int) -> bool:
         return s.connect_ex(("127.0.0.1", port)) != 0
 
 
+UI_PORT = 0
+
+
+@app.get("/panel", response_class=HTMLResponse)
+def panel_page() -> str:
+    return (STATIC / "panel.html").read_text(encoding="utf-8")
+
+
+def open_panel() -> bool:
+    """오른쪽 끝에 좁은 올리기 패널(Chrome 앱 창)을 붙인다. 이미 떠 있으면 자리만 맞춘다."""
+    from .. import youtube as yt
+    try:
+        pp = yt.pick_panel_port(UI_PORT)
+        if not (yt.port_open(pp) and yt.is_our_panel(pp, UI_PORT)):
+            w = int(config.load()["ui"]["width"])
+            subprocess.Popen([yt.chrome_path(), f"--app=http://127.0.0.1:{UI_PORT}/panel",
+                              f"--user-data-dir={config.PROFILES / '_panel'}", f"--remote-debugging-port={pp}",
+                              "--no-first-run", "--no-default-browser-check", f"--window-size={w},900"],
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            if not yt.wait_port(pp):
+                return False
+            time.sleep(1.0)
+        yt.place(pp, "right")
+        return True
+    except BaseException as e:      # noqa: BLE001 — 패널은 보기 좋으라고 띄우는 것, 실패해도 올리기는 계속
+        detail(f"패널 열기 실패: {e}")
+        return False
+
+
+@app.post("/api/panel/open")
+def panel_open() -> Dict[str, Any]:
+    return {"ok": open_panel()}
+
+
 def serve(window: bool = True) -> None:
     import uvicorn
     want = int(os.environ.get("ASIDE_LONG_PORT") or config.load()["ui"]["port"])
@@ -719,4 +758,6 @@ def serve(window: bool = True) -> None:
     if window:
         threading.Timer(1.2, webbrowser.open, args=(url,)).start()
     log(f"롱폼 공방이 켜졌어요 — {url}  (이 창을 닫으면 꺼져요)")
+    global UI_PORT
+    UI_PORT = port
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", log_config=None)

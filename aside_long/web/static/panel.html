@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>롱폼 · 올리기</title>
+<style>
+:root{--bg:#F6F1E8;--card:#FFFDF8;--ink:#1E293B;--body:#334155;--mute:#94A3B8;--line:#E7DFD0;--a:#1F4E79;--b:#9DC3E6;--ok:#2E7D5B;--warn:#C77700;--bad:#E4572E}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--body);font:14px/1.5 "Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;letter-spacing:-.01em}
+button,select,input,textarea{font:inherit;color:inherit}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:12px 14px 8px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.brand b{font-size:16px;color:var(--a)}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+select,input,textarea{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+select{flex:1;min-width:0}
+textarea{width:100%;resize:vertical;line-height:1.5}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap}
+button:hover{border-color:var(--b)}
+button.pri{background:var(--a);border-color:var(--a);color:#fff;font-weight:700}
+button.hot{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:700}
+button:disabled{opacity:.45;cursor:default}
+main{padding:10px 14px calc(var(--logh,170px) + 20px)}
+.item{display:grid;grid-template-columns:96px 1fr;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px;margin-bottom:6px;cursor:pointer}
+.item:hover,.item.sel{border-color:var(--a)}
+.thumb{width:96px;height:54px;border-radius:6px;background:#EEE7DA center/cover no-repeat}
+.item .t{font-weight:700;color:var(--ink);font-size:13px;line-height:1.35}
+.item .h{color:var(--mute);font-size:12px}
+.pill{font-size:11px;padding:1px 7px;border-radius:99px;background:#efe9de;color:#64748b;margin-right:4px}
+.pill.ok{background:#dcfce7;color:var(--ok)}.pill.warn{background:#fef3c7;color:var(--warn)}.pill.bad{background:#fee2e2;color:var(--bad)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0}
+label{display:block;font-size:12px;color:var(--mute);margin:8px 0 3px}
+.lab{display:flex;justify-content:space-between;align-items:center;margin:10px 0 3px;font-size:12px;color:var(--mute)}
+#log{position:fixed;left:0;right:0;bottom:0;height:var(--logh,170px);background:#1d2433;color:#e2e8f0;font:12px/1.5 Consolas,"Malgun Gothic",monospace;padding:8px 12px;overflow:auto}
+#logbar{position:fixed;left:0;right:0;bottom:var(--logh,170px);height:8px;cursor:ns-resize;background:#334155;z-index:5}
+.muted{color:var(--mute);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><b>롱폼 · 올리기</b><span><button onclick="window.open('/', '_blank')" title="넓은 대시보드">대시보드</button> <button onclick="stopRun()">■ 멈춤</button></span></div>
+  <div class="row"><select id="job"></select></div>
+  <div class="row" style="margin-top:6px"><select id="acc" title="올릴 채널"></select><button onclick="runArgs(['login','--account',$('#acc').value])" title="왼쪽 Chrome 에서 로그인·채널 확인">로그인 창</button></div>
+  <div class="muted" id="busy" style="margin-top:4px"></div>
+</header>
+<main>
+  <div id="detail"></div>
+  <div id="list"></div>
+</main>
+<div id="logbar"></div>
+<div id="log"></div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(u, o = {}) { const r = await fetch(u, {headers: {'Content-Type': 'application/json'}, ...o}); if (!r.ok) { let m = await r.text(); try { m = JSON.parse(m).detail } catch (e) {} alert(m); throw new Error(m) } return r.json() }
+let S = null, JOB = localStorage.getItem('panel_job') || '', SID = null, ACCS = null, since = 0, busy = false;
+
+async function load() {
+  S = await api('/api/state');
+  if (!S.jobs.find(j => j.name === JOB)) JOB = S.jobs[0]?.name || '';
+  $('#job').innerHTML = S.jobs.map(j => `<option value="${esc(j.name)}" ${j.name === JOB ? 'selected' : ''}>${esc(j.title)} (${esc(j.name)})</option>`).join('') || '<option>작업 없음</option>';
+  ACCS = await api('/api/accounts');
+  $('#acc').innerHTML = ACCS.accounts.map(a => `<option value="${esc(a.name)}" ${a.name === ACCS.current ? 'selected' : ''}>${esc(a.label || a.name)}</option>`).join('') || '<option>채널 없음 — 대시보드 설정에서 추가</option>';
+  busy = S.busy; $('#busy').textContent = busy ? '● 작업 중: ' + (S.cmd || [])[0] : '';
+  list();
+  if (SID) detail();
+}
+$('#job').onchange = e => { JOB = e.target.value; localStorage.setItem('panel_job', JOB); SID = null; $('#detail').innerHTML = ''; load() };
+$('#acc').onchange = e => api('/api/accounts/use', {method: 'POST', body: JSON.stringify({name: e.target.value})});
+
+function status(u) {
+  if (u.posted) return '<span class="pill ok">올림</span>';
+  if (u.scheduled) return `<span class="pill ok">예약 ${esc(u.scheduled)}</span>`;
+  if (u.upload_error) return '<span class="pill bad">실패</span>';
+  if (u.video) return '<span class="pill warn">올릴 준비</span>';
+  return '<span class="pill">영상 없음</span>';
+}
+function list() {
+  const j = S.jobs.find(x => x.name === JOB); if (!j) { $('#list').innerHTML = ''; return }
+  $('#list').innerHTML = `<div class="muted" style="margin:6px 0">영상 ${j.units.filter(u => u.video).length}/${j.units.length}편</div>` + j.units.map(u => `
+    <div class="item ${u.prefix === SID ? 'sel' : ''}" onclick="SID='${u.prefix}';list();detail()">
+      <div class="thumb" style="${u.thumb ? `background-image:url('${u.thumb}')` : ''}"></div>
+      <div><div class="t">${esc(u.prefix)} · ${esc(u.yt_title || u.section)}</div><div class="h">${status(u)}${u.audio_min ? u.audio_min + '분' : ''}</div></div>
+    </div>`).join('');
+}
+async function detail() {
+  const U = await api(`/api/unit/${encodeURIComponent(JOB)}/${SID}`), up = U.upload || {}, m = up.meta, st = up.state || {};
+  const cp = (id, t) => `<div class="lab"><span>${t}</span><button onclick="navigator.clipboard.writeText(document.getElementById('${id}').value);this.textContent='복사됨'">복사</button></div>`;
+  $('#detail').innerHTML = `<div class="card">
+    <b>${esc(SID)} · ${esc(U.status.section)}</b>
+    ${st.posted ? `<p><span class="pill ok">${st.scheduled ? '예약 ' + esc(st.scheduled.when) : '올림'}</span><a href="${esc(st.posted.url || '#')}" target="_blank">${esc(st.posted.url || '')}</a></p>` : ''}
+    ${st.error ? `<p style="color:var(--bad);font-size:12px">지난 시도: ${esc(st.error)}</p>` : ''}
+    ${!U.video ? '<p class="muted">아직 영상이 없어요 — 대시보드에서 만들어 주세요.</p>' : ''}
+    <div class="row" style="margin-top:6px"><select id="vis"><option value="public">공개</option><option value="unlisted">일부 공개</option><option value="private">비공개</option></select></div>
+    <label>예약 (비우면 지금)</label><input id="at" type="datetime-local" style="width:100%">
+    <div class="row" style="margin-top:8px">
+      <button onclick="post(true)" ${!U.video || busy ? 'disabled' : ''}>미리 채워 보기</button>
+      <button class="pri" onclick="post(false)" ${!U.video || busy ? 'disabled' : ''}>▶ 올리기</button>
+      <button onclick="runArgs(['yt-meta','--job',JOB,'--only',SID,'--force'])" ${busy ? 'disabled' : ''} title="Claude 가 다시 써요">문구 다시</button>
+    </div>
+    ${m ? `${cp('t', '제목')}<textarea id="t" rows="2" readonly>${esc(m.title)}</textarea>
+    ${cp('d', '설명 (목차 포함)')}<textarea id="d" rows="9" readonly>${esc(m.description)}</textarea>
+    ${cp('g', '태그')}<textarea id="g" rows="2" readonly>${esc(m.tags.join(', '))}</textarea>
+    ${cp('c', '고정 댓글')}<textarea id="c" rows="2" readonly>${esc(m.pinned_comment)}</textarea>` : ''}
+    ${U.thumb ? `<div class="lab"><span>썸네일</span></div><img src="${U.thumb}" style="width:100%;border-radius:8px">` : ''}
+  </div>`;
+}
+async function runArgs(args) { await api('/api/run', {method: 'POST', body: JSON.stringify({args})}); load() }
+async function stopRun() { await api('/api/stop', {method: 'POST'}); load() }
+async function post(dry) {
+  const at = $('#at').value, vis = $('#vis').value;
+  const what = dry ? '업로드 창을 채워만 볼까요? (게시는 안 눌러요)' : at ? `${at.replace('T', ' ')} 에 예약 공개로 올릴까요?` : `지금 「${{public: '공개', unlisted: '일부 공개', private: '비공개'}[vis]}」로 올릴까요?`;
+  if (!confirm(`${$('#acc').selectedOptions[0]?.text || ''} — ${SID}\n${what}`)) return;
+  const args = ['post', '--job', JOB, '--only', SID, '--account', $('#acc').value, '--visibility', vis];
+  if (at) args.push('--at', at.replace('T', ' '));
+  if (dry) args.push('--dry-run');
+  await runArgs(args);
+}
+async function poll() {
+  try {
+    const r = await api('/api/log?since=' + since);
+    since = r.next;
+    if (r.lines.length) { const el = $('#log'); el.insertAdjacentHTML('beforeend', r.lines.map(l => `<div>${esc(l)}</div>`).join('')); el.scrollTop = el.scrollHeight }
+    if (r.busy !== busy) load();
+  } catch (e) {}
+  setTimeout(poll, 1000);
+}
+(function () {
+  const bar = $('#logbar'), root = document.documentElement;
+  const set = h => { h = Math.max(28, Math.min(innerHeight - 120, h)); root.style.setProperty('--logh', h + 'px'); try { localStorage.setItem('panel_logh', h) } catch (e) {} };
+  try { set(+localStorage.getItem('panel_logh') || 170) } catch (e) {}
+  bar.onpointerdown = e => { bar.setPointerCapture(e.pointerId); bar.onpointermove = ev => set(innerHeight - ev.clientY - 4); bar.onpointerup = () => { bar.onpointermove = null } };
+})();
+load().then(poll);
+</script>
+</body>
+</html>
