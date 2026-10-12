@@ -816,8 +816,9 @@ async function pollLog() {
       el.insertAdjacentHTML('beforeend', r.lines.map(l => `<div>${esc(l)}</div>`).join(''));
       if (atEnd) el.scrollTop = el.scrollHeight;
     }
-    if (r.busy !== wasBusy) {
-      const done = wasBusy && !r.busy;
+    // ★ 1초 안에 끝나는 일(썸네일 등)은 폴링이 「작업 중」을 한 번도 못 본다 — 그래도 화면(S.busy)이 작업 중으로 남아 있으면 풀어야 한다
+    if (r.busy !== wasBusy || r.busy !== S.busy) {
+      const done = (wasBusy || S.busy) && !r.busy;
       wasBusy = r.busy;
       await refresh();
       if (done && !DIRTY && PAGE !== 'set') show(PAGE);
