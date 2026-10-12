@@ -441,10 +441,11 @@ async function pageSet() {
       </div>` : '<div class="card muted">작업이 없어요.</div>'}
       <div class="card" style="margin-top:12px"><h2>도구 상태</h2>${tl ? `<table>
         <tr><td>Claude (개작·대본)</td><td>${tl.claude.logged_in ? pill('로그인 ' + esc(tl.claude.email), 'ok') : pill('로그인 필요', 'bad')}</td></tr>
-        <tr><td>Codex (그림)</td><td>${tl.codex.installed ? pill(esc(tl.codex.status || '설치됨'), /Logged in/i.test(tl.codex.status) ? 'ok' : 'warn') : pill('없음', 'bad')}</td></tr>
+        <tr><td>Codex (그림)</td><td>${tl.codex.installed ? pill(esc(tl.codex.status || '설치됨'), /Logged in/i.test(tl.codex.status) ? 'ok' : 'warn') : pill('없음', 'bad')} <span class="muted">— 아래 「Codex 계정」</span></td></tr>
         <tr><td>SuperTonic3 (목소리)</td><td>${pill(tl.tts ? '준비됨' : '없음', tl.tts ? 'ok' : 'bad')}</td></tr>
         <tr><td>ffmpeg (영상)</td><td>${pill(tl.ffmpeg ? '있음' : '없음', tl.ffmpeg ? 'ok' : 'bad')}</td></tr></table>
-        <p class="muted">Codex 계정 바꾸기: 터미널에서 <code>codex logout</code> → <code>codex login</code></p>` : ''}</div>
+        ` : ''}</div>
+      <div class="card" style="margin-top:12px" id="codexCard"><h2>Codex 계정 <span class="muted">(그림)</span></h2><p class="muted">불러오는 중…</p></div>
     </div>
     <div>
       <div class="card"><h2>전체 기본값 <span class="muted">(작업 설정이 없을 때 쓰임)</span></h2>
@@ -467,6 +468,38 @@ async function pageSet() {
         <div class="row" style="margin-top:8px"><input id="aN" placeholder="이름(영문, 예: history)" style="flex:1"><input id="aL" placeholder="표시(예: @채널)" style="flex:1"><button onclick="addAcc()">채널 추가</button></div>
         <p class="muted">추가한 뒤 「로그인 창」에서 Google 로그인과 채널 선택을 한 번 해 주세요.</p></div>
     </div></div>`;
+  codexCard();
+}
+async function codexCard() {
+  const el = $('#codexCard'); if (!el) return;
+  let c;
+  try { c = await (await fetch('/api/codex')).json() } catch (e) { c = null }
+  if (!c || c.detail) { el.innerHTML = '<h2>Codex 계정</h2><p class="muted">run.bat 을 다시 켜면 보여요.</p>'; return }
+  const plan = {team: '팀(회사 워크스페이스)', enterprise: '엔터프라이즈(회사)', business: '비즈니스(회사)', edu: '교육기관', plus: 'Plus(개인)', pro: 'Pro(개인)', free: '무료'}[c.plan] || c.plan || '—';
+  el.innerHTML = `<h2>Codex 계정 <span class="muted">(그림 — ChatGPT 로그인)</span></h2>
+    <table>
+      <tr><td class="muted">상태</td><td>${!c.installed ? pill('codex 없음', 'bad') : c.logging_in ? pill('로그인 진행 중 — 브라우저를 확인하세요', 'warn') : c.logged_in ? pill('로그인됨', 'ok') : pill('로그인 안 됨', 'bad')}</td></tr>
+      <tr><td class="muted">계정</td><td>${esc(c.email || '—')}</td></tr>
+      <tr><td class="muted">요금제</td><td>${esc(plan)}${c.workspace ? ' ' + pill('회사 크레딧을 써요', 'warn') : ''}${c.until ? ` <span class="muted">· ${esc(String(c.until).slice(0, 10))}까지</span>` : ''}</td></tr>
+    </table>
+    <div class="row" style="margin-top:10px">
+      ${c.logging_in ? `<button onclick="codexAct('cancel')">로그인 취소</button>`
+        : `<button class="pri" onclick="codexAct('login')" ${!c.installed ? 'disabled' : ''}>${c.logged_in ? '다른 계정으로 로그인' : '로그인 (ChatGPT)'}</button>`}
+      <button onclick="codexAct('logout')" ${!c.logged_in || c.logging_in ? 'disabled' : ''}>로그아웃</button>
+      <button onclick="codexCard()">새로고침</button>
+    </div>
+    <p class="muted">「로그인」을 누르면 브라우저가 열려요. ChatGPT 계정으로 로그인한 뒤 「새로고침」을 눌러 계정·요금제를 확인하세요. 그림을 그리는 중에는 바꿀 수 없어요.</p>`;
+}
+async function codexAct(act) {
+  if (act === 'logout' && !confirm('Codex 에서 로그아웃할까요? (그림을 그리려면 다시 로그인해야 해요)')) return;
+  if (act === 'login') {
+    const c = await (await fetch('/api/codex')).json();
+    if (c.logged_in && !confirm(`지금 ${c.email || '로그인된 계정'} 이에요. 다른 계정으로 로그인할까요? (먼저 로그아웃해요)`)) return;
+    if (c.logged_in) await api('/api/codex/logout', {method: 'POST'});
+  }
+  await api('/api/codex/' + act, {method: 'POST'});
+  setTimeout(codexCard, 800);
+  if (act === 'login') { let n = 0; const t = setInterval(async () => { await codexCard(); const c = await (await fetch('/api/codex')).json(); if (!c.logging_in || ++n > 150) clearInterval(t) }, 4000) }
 }
 async function saveJob() {
   await api(`/api/job/${encodeURIComponent(JOB)}/settings`, {method: 'PUT', body: JSON.stringify({

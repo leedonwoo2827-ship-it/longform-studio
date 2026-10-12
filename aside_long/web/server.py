@@ -317,6 +317,54 @@ def tools() -> Dict[str, Any]:
             "tts": tts.available(), "ffmpeg": bool(shutil.which("ffmpeg"))}
 
 
+IMAGE_CMDS = {"s3-images", "make", "all"}
+
+
+def _image_busy() -> bool:
+    return RUN.busy and bool(RUN.cmd) and RUN.cmd[0] in IMAGE_CMDS
+
+
+@app.get("/api/codex")
+def codex_status() -> Dict[str, Any]:
+    from .. import codex_auth
+    return codex_auth.status()
+
+
+@app.post("/api/codex/login")
+def codex_login() -> Dict[str, Any]:
+    """ChatGPT OAuth — 브라우저가 열린다. 그림을 그리는 중이 아니면 다른 작업(개작·대본)이 돌아도 된다."""
+    from .. import codex_auth
+    if _image_busy():
+        raise HTTPException(409, "그림을 그리는 중에는 계정을 바꿀 수 없어요 — 멈춘 뒤 다시")
+    try:
+        RUN.add("▶ Codex 로그인 — 브라우저에서 ChatGPT 계정으로 로그인해 주세요")
+        codex_auth.login(RUN.add)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/codex/cancel")
+def codex_cancel() -> Dict[str, Any]:
+    from .. import codex_auth
+    codex_auth.cancel_login()
+    RUN.add("■ Codex 로그인을 취소했어요")
+    return {"ok": True}
+
+
+@app.post("/api/codex/logout")
+def codex_logout() -> Dict[str, Any]:
+    from .. import codex_auth
+    if _image_busy():
+        raise HTTPException(409, "그림을 그리는 중에는 로그아웃할 수 없어요 — 멈춘 뒤 다시")
+    try:
+        msg = codex_auth.logout()
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    RUN.add(f"Codex 로그아웃 — {msg}")
+    return {"ok": True}
+
+
 @app.get("/api/log")
 def get_log(since: int = 0) -> Dict[str, Any]:
     start = max(0, since - RUN.base)
