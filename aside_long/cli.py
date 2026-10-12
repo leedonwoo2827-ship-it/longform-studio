@@ -2,14 +2,14 @@
 
 만들기
   new <job> --from <원고.docx|폴더> [--title 롱폼 세계사] [--style textbook|ink] [--voice F4] [--minutes 15]
-  all       --job J [--only 1-1,…] [--force]     원고 하나를 끝까지: 안전 개작 → 대본·채점 → 목소리 → 그림 → 영상 → 썸네일
-  make      --job J [--only 1-1]                  대본 확인 뒤 딸깍: 목소리 → 그림 → 영상 → 썸네일
+  all       --job J [--only 1-1,…] [--force]     1→7: 안전 개작 → 대본·채점 → 목소리 → 그림 → 영상 → 썸네일 → 유튜브 문구
+  make      --job J [--only 1-1]                  4→7: 그림 → 영상 → 썸네일 → 유튜브 문구 (목소리 없으면 먼저)
   prep      --job J [--only 1-1,…]                1→3: 개작 → 대본·채점·유튜브 문구 → 목소리 (그림 크레딧 안 씀)
-  s0-rewrite | s1-script | s2-tts | s3-images [--scenes 3,7] | s4-render | s5-thumb   (단계별)
+  s0-rewrite | s1-script | s2-tts | s3-images [--scenes 3,7] | s4-render | s5-thumb | yt-meta   (단계별 1~7)
 올리기 (YouTube Studio — 실제 Chrome 전용 프로필)
   account add <이름> [--label @채널] [--profile <Chrome 프로필 폴더>] [--port 9361] | account list | account use <이름> | account rm <이름>
   login   [--account A]                 Chrome 에서 Google 로그인·채널 선택(한 번)
-  yt-meta --job J [--only 1-1] [--force]  유튜브 문구(제목·설명·해시태그·태그·고정 댓글)만 다시 쓰기
+  yt-meta --job J [--only 1-1] [--force]  7단계 유튜브 문구(제목·설명·목차·해시태그·태그·고정 댓글)
   post    --job J --only 1-1 [--account A] [--at "2026-10-12 19:00"] [--visibility public|unlisted|private] [--dry-run] [--force]
   probe   [--account A]                 업로드 창 구조 떠 두기(셀렉터 맞출 때)
 기타
@@ -29,10 +29,11 @@ from . import config, styles
 from .job import Job, need
 from .log import detail, log
 
-STAGES = ["s0-rewrite", "s1-script", "s2-tts", "s3-images", "s4-render", "s5-thumb"]
-MAKE = STAGES[2:]
-STEP_NAMES = {"s0-rewrite": "1/6 안전 개작", "s1-script": "2/6 대본·채점", "s2-tts": "3/6 목소리",
-              "s3-images": "4/6 그림(Codex)", "s4-render": "5/6 영상 굽기", "s5-thumb": "6/6 썸네일"}
+STAGES = ["s0-rewrite", "s1-script", "s2-tts", "s3-images", "s4-render", "s5-thumb", "yt-meta"]
+MAKE = STAGES[2:]      # 4→7 (목소리는 이미 있으면 캐시로 바로 지나간다)
+STEP_NAMES = {"s0-rewrite": "1/7 안전 개작", "s1-script": "2/7 대본·채점", "s2-tts": "3/7 목소리",
+              "s3-images": "4/7 그림(Codex)", "s4-render": "5/7 영상 굽기", "s5-thumb": "6/7 썸네일",
+              "yt-meta": "7/7 유튜브 문구"}
 
 
 def _only(v: Optional[str]) -> Optional[List[str]]:
@@ -40,9 +41,9 @@ def _only(v: Optional[str]) -> Optional[List[str]]:
 
 
 def run_stage(name: str, job: Job, **kw) -> None:
-    from . import s0_rewrite, s1_script, s2_tts, s3_images, s4_render, s5_thumb
+    from . import s0_rewrite, s1_script, s2_tts, s3_images, s4_render, s5_thumb, ytmeta
     mod = {"s0-rewrite": s0_rewrite, "s1-script": s1_script, "s2-tts": s2_tts, "s3-images": s3_images,
-           "s4-render": s4_render, "s5-thumb": s5_thumb}[name]
+           "s4-render": s4_render, "s5-thumb": s5_thumb, "yt-meta": ytmeta}[name]
     log(f"── {STEP_NAMES.get(name, name)}")
     detail(f"stage {name} [{job.name}] {kw}")
     mod.run(job, **kw)
@@ -213,10 +214,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--visibility", choices=["public", "unlisted", "private"])
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--force", action="store_true")
-    p = sub.add_parser("yt-meta")
-    p.add_argument("--job")
-    p.add_argument("--only")
-    p.add_argument("--force", action="store_true")
     sub.add_parser("ui")
     sub.add_parser("tts-setup")
     sub.add_parser("doctor")
@@ -250,9 +247,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if a.cmd == "post":
         return 0 if _guard("올리기", lambda: cmd_post(a)) else 1
-    if a.cmd == "yt-meta":
-        from . import ytmeta
-        return 0 if _guard("유튜브 문구", lambda: ytmeta.run(need(a.job), only=_only(a.only), force=a.force)) else 1
     job = need(a.job)
     only = _only(a.only)
     kw = {"only": only, "force": a.force}

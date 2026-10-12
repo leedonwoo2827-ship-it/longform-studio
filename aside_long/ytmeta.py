@@ -69,6 +69,13 @@ def write(job: Job, u, model: str) -> bool:
         if data:
             data["youtube"] = {**(data.get("youtube") or {}), **it}
             config.write_json(path, data)
+    write_txt(job, sid)
+    log(f"  {'✓' if not probs else '△'} {sid} 유튜브 문구 — {it.get('title', '')}" + (f" (겹침 {len(probs)}건 남음)" if probs else ""))
+    return not probs
+
+
+def write_txt(job: Job, sid: str) -> None:
+    """업로드 때 쓰는 것과 똑같은 문구(목차 포함)를 out/<id>_youtube.txt 로."""
     from .youtube import meta
     m = meta(job.script(sid), config.read_json(job.sub("audio", sid) / "timing.json"))
     out = job.sub("out", sid)
@@ -76,8 +83,6 @@ def write(job: Job, u, model: str) -> bool:
     (out / f"{sid}_youtube.txt").write_text(
         f"[제목]\n{m['title']}\n\n[설명]\n{m['description']}\n\n[태그]\n{', '.join(m['tags'])}\n\n[고정 댓글]\n{m['pinned_comment']}\n",
         encoding="utf-8")
-    log(f"  {'✓' if not probs else '△'} {sid} 유튜브 문구 — {it.get('title', '')}" + (f" (겹침 {len(probs)}건 남음)" if probs else ""))
-    return not probs
 
 
 def run(job: Job, only=None, force: bool = False, **_) -> None:
@@ -88,6 +93,7 @@ def run(job: Job, only=None, force: bool = False, **_) -> None:
             log(f"  · {u.prefix} 대본이 없어요.")
             continue
         if not force and "hook_lines" in (sc.get("youtube") or {}):
-            log(f"  {u.prefix} 유튜브 문구는 이미 있어요.")
+            write_txt(job, u.prefix)        # 문구는 그대로, 목차(영상의 실제 장 시작 시각)만 새로 붙여 파일을 다시 쓴다
+            log(f"  ✓ {u.prefix} 유튜브 문구 — 있던 문구에 목차를 붙여 out/{u.prefix}_youtube.txt 로 (새로 쓰려면 「이미 된 것도 다시」)")
             continue
         write(job, u, model)

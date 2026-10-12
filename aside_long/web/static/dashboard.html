@@ -236,8 +236,8 @@ function planCard(ok) {
     ${ok ? makeSettings() + `
     <div class="row">
       <button data-run onclick="bulk('prep')" title="개작 → 대본·채점·유튜브 문구 → 목소리 (그림 크레딧 안 씀)">▶ 1→3 개작·대본·목소리</button>
-      <button class="go" data-run onclick="bulk('make')" title="그림(Codex) → 영상 → 썸네일 (목소리가 없으면 먼저 만들어요)">▶ 4→6 그림·영상</button>
-      <button class="pri" data-run onclick="bulk('all')" title="개작부터 썸네일까지 한 번에">▶ 전체 1→6</button>
+      <button class="go" data-run onclick="bulk('make')" title="그림(Codex) → 영상 → 썸네일 → 유튜브 문구 (목소리가 없으면 먼저 만들어요)">▶ 4→7 그림·영상·문구</button>
+      <button class="pri" data-run onclick="bulk('all')" title="개작부터 유튜브 문구까지 한 번에">▶ 전체 1→7</button>
     </div>
     <p class="muted">진행은 「② 만들기」에서 볼 수 있어요. 한 편이 실패해도 다음 편으로 넘어가요.</p>`
     : '<div class="empty" style="padding:16px">왼쪽 「원고 분석」에서 구성을 확정하면 열려요.</div>'}`;
@@ -312,7 +312,7 @@ function selAll(on) { SEL = new Set(on ? SKEL.units.map(u => u.prefix) : []); do
 function updSel() { const e = $('#selN'); if (e) e.textContent = SEL.size ? `${SEL.size}개 선택` : '선택 없음 = 전체'; estimate() }
 async function bulk(cmd) {
   const list = [...SEL], n = list.length || units().length;
-  const what = {prep: '1→3 개작·대본·목소리까지', make: '4→6 그림·영상·썸네일까지', all: '개작부터 썸네일까지'}[cmd];
+  const what = {prep: '1→3 개작·대본·목소리까지', make: '4→7 그림·영상·썸네일·유튜브 문구까지', all: '개작부터 유튜브 문구까지'}[cmd];
   if (!confirm(`「${JOB}」 단원 ${n}개를 ${what} 만들까요?`)) return;
   await runArgs([cmd, '--job', JOB, ...(list.length ? ['--only', list.join(',')] : [])]);
 }
@@ -355,14 +355,12 @@ function pageDash() {
     <div class="card">
       <div class="row" style="margin-bottom:8px">
         <b>고른 편에</b> <span class="muted" id="dSelN"></span>
-        ${[['s0-rewrite', '1 개작'], ['s1-script', '2 대본'], ['s2-tts', '3 목소리'], ['s3-images', '4 그림'], ['s4-render', '5 영상'], ['s5-thumb', '6 썸네일']]
+        ${[['s0-rewrite', '1 개작'], ['s1-script', '2 대본'], ['s2-tts', '3 목소리'], ['s3-images', '4 그림'], ['s4-render', '5 영상'], ['s5-thumb', '6 썸네일'], ['yt-meta', '7 유튜브 문구']]
           .map(([c, t]) => `<button data-run onclick="dRun('${c}')" ${S.busy ? 'disabled' : ''}>${t}</button>`).join('')}
         <span class="muted">|</span>
         <button data-run onclick="dRun('prep')" ${S.busy ? 'disabled' : ''}>▶ 1→3</button>
-        <button class="go" data-run onclick="dRun('make')" ${S.busy ? 'disabled' : ''}>▶ 4→6</button>
-        <button class="pri" data-run onclick="dRun('all')" ${S.busy ? 'disabled' : ''}>▶ 1→6</button>
-        <span class="muted">|</span>
-        <button data-run onclick="dRun('yt-meta')" ${S.busy ? 'disabled' : ''} title="유튜브 제목·설명·태그 다시 쓰기">유튜브 문구</button>
+        <button class="go" data-run onclick="dRun('make')" ${S.busy ? 'disabled' : ''} title="그림 → 영상 → 썸네일 → 유튜브 문구">▶ 4→7</button>
+        <button class="pri" data-run onclick="dRun('all')" ${S.busy ? 'disabled' : ''}>▶ 1→7</button>
         <label style="margin:0 0 0 auto" title="이미 된 단계도 다시 만들기(대본·그림을 새로 — 크레딧 주의)"><input type="checkbox" id="dForce" style="width:auto"> 이미 된 것도 다시</label>
       </div>
       <table class="tbl">
@@ -386,10 +384,10 @@ async function dRun(cmd) {
   const list = units().map(u => u.prefix).filter(p => SEL.has(p));
   if (!list.length) return alert('표에서 편을 먼저 고르세요');
   const names = {'s0-rewrite': '1 개작', 's1-script': '2 대본', 's2-tts': '3 목소리', 's3-images': '4 그림', 's4-render': '5 영상', 's5-thumb': '6 썸네일',
-                 prep: '1→3', make: '4→6', all: '1→6', 'yt-meta': '유튜브 문구'};
-  const force = $('#dForce')?.checked && cmd !== 'yt-meta' ? ['--force'] : [];
+                 prep: '1→3', make: '4→7', all: '1→7', 'yt-meta': '7 유튜브 문구'};
+  const force = $('#dForce')?.checked ? ['--force'] : [];
   if (!confirm(`${list.join(', ')} (${list.length}편) — 「${names[cmd]}」${force.length ? ' (이미 된 것도 다시)' : ''} 할까요?`)) return;
-  await runArgs([cmd, '--job', JOB, '--only', list.join(','), ...force, ...(cmd === 'yt-meta' && $('#dForce')?.checked ? ['--force'] : [])]);
+  await runArgs([cmd, '--job', JOB, '--only', list.join(','), ...force]);
 }
 
 // ══ 수정 — 단원 하나: 원고·개작 / 대본 / 그림 / 영상 ══
@@ -422,11 +420,12 @@ function renderMain() {
       ${step('s2-tts', '3 목소리', 'SuperTonic3')}<span class="arrow">→</span>
       ${step('s3-images', '4 그림', 'Codex 3개 동시')}<span class="arrow">→</span>
       ${step('s4-render', '5 영상', 'ffmpeg 1920×1080')}<span class="arrow">→</span>
-      ${step('s5-thumb', '6 썸네일', '1280×720')}
+      ${step('s5-thumb', '6 썸네일', '1280×720')}<span class="arrow">→</span>
+      ${step('yt-meta', '7 유튜브 문구', '제목·설명(목차)·해시태그·태그·고정 댓글 — 있으면 목차만 새로')}
       <span style="flex:1"></span>
       <button data-run onclick="runCmd('prep')" ${S.busy ? 'disabled' : ''} title="개작 → 대본·채점 → 목소리">▶ 1→3</button>
-      <button class="go" data-run onclick="runCmd('make')" ${S.busy ? 'disabled' : ''} title="그림 → 영상 → 썸네일">▶ 4→6</button>
-      <button class="pri" data-run onclick="runCmd('all')" ${S.busy ? 'disabled' : ''}>▶ 전체 1→6</button>
+      <button class="go" data-run onclick="runCmd('make')" ${S.busy ? 'disabled' : ''} title="그림 → 영상 → 썸네일 → 유튜브 문구">▶ 4→7</button>
+      <button class="pri" data-run onclick="runCmd('all')" ${S.busy ? 'disabled' : ''}>▶ 전체 1→7</button>
     </div>
     <div class="tabs">
       ${[['src', '원고·개작'], ['script', '대본'], ['img', '그림'], ['vid', '영상']].map(([k, t]) => `<button class="${TAB === k ? 'on' : ''}" onclick="TAB='${k}';renderMain()">${t}</button>`).join('')}
