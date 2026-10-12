@@ -106,7 +106,15 @@ class Engine:
         self._tts = load_text_to_speech_with_providers(str(assets_dir() / "onnx"), _providers())
         self.sample_rate = int(self._tts.sample_rate)
         self._styles: Dict[str, object] = {}
-        self._pmap = load_pronunciation_map(PMAP)
+        self._pver = None
+        self._load_dict()
+
+    def _load_dict(self) -> None:
+        """프로젝트 발음 사전(pronunciation.yaml — 대시보드에서 고침). 바뀌면 다음 합성에서 다시 읽는다."""
+        from .. import pron
+        from .pronunciation import load_pronunciation_map
+        self._pmap = load_pronunciation_map(pron.dict_path())
+        self._pver = pron.version()
 
     @classmethod
     def get(cls) -> "Engine":
@@ -134,6 +142,9 @@ class Engine:
         return full[: min(int(nz[-1]) + int(self.sample_rate * 0.15), full.shape[-1])]
 
     def synth(self, text: str, *, voice: str, speed: float = 1.0, lang: str = "ko") -> np.ndarray:
+        from .. import pron
+        if self._pver != pron.version():
+            self._load_dict()
         text = self._pmap.apply(text, spell_unknown_acronyms=True, convert_years=True)
         style = self._style(voice)
         pieces = _split_for_tts(text)

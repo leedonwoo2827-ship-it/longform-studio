@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -315,6 +316,109 @@ def tools() -> Dict[str, Any]:
             cx_status = str(e)[:120]
     return {"claude": claude_cli.auth_status(), "codex": {"installed": bool(cx), "status": cx_status},
             "tts": tts.available(), "ffmpeg": bool(shutil.which("ffmpeg"))}
+
+
+# ── 발음 · 문장별 목소리 ─────────────────────────────────────────────────────
+class TextReq(BaseModel):
+    text: str = ""
+
+
+@app.post("/api/speak-numbers")
+def speak_numbers(req: TextReq) -> Dict[str, Any]:
+    from .. import pron
+    return {"text": pron.speak_numbers(req.text)}
+
+
+@app.post("/api/speak-roman")
+def speak_roman(req: TextReq) -> Dict[str, Any]:
+    from .. import pron
+    return {"text": pron.speak_roman(req.text)}
+
+
+@app.post("/api/pronounce")
+def pronounce(req: TextReq) -> Dict[str, Any]:
+    """자막 → 읽는 소리(괄호·따옴표 걷기 → 숫자 → 영문/사전)."""
+    from .. import pron
+    return {"text": pron.for_speech(req.text)}
+
+
+def _all_lines(job: Job, sid: str) -> List[Dict[str, Any]]:
+    script = job.script(sid) or {}
+    return [ln for sc in scenes(script) for ln in sc.get("lines") or []]
+
+
+@app.get("/api/pron-dict")
+def pron_dict(job: str = "", sid: str = "") -> Dict[str, Any]:
+    from .. import pron
+    texts: List[str] = []
+    if job:
+        j = _job(job)
+        for u in ([j.unit(sid)] if sid else j.units):
+            if u:
+                texts += [t for ln in _all_lines(j, u.prefix) for t in (ln.get("say", ""), ln.get("cap", ""))]
+    r = pron.rules()
+    return {"path": str(pron.dict_path()), "count": len(r), "rules": r, "missing": pron.missing(texts)}
+
+
+class DictReq(BaseModel):
+    rules: Dict[str, str]
+
+
+@app.post("/api/pron-dict")
+def pron_dict_save(req: DictReq) -> Dict[str, Any]:
+    from .. import pron
+    n = pron.save_rules(req.rules)
+    RUN.add(f"발음 사전을 저장했어요 ({n}개) — 「3 목소리」를 누르면 바뀐 말이 든 문장만 다시 합성해요")
+    return {"ok": True, "count": n}
+
+
+_TTS_LOCK = threading.Lock()
+
+
+def _line_path(job: Job, sid: str, say: str) -> Path:
+    from ..s2_tts import line_file
+    return line_file(job.sub("audio", sid), say, str(job.setting("tts", "voice")).upper(), float(job.setting("tts", "speed")))
+
+
+@app.get("/api/unit/{name}/{sid}/line/{n}/audio")
+def line_audio(name: str, sid: str, n: int, say: Optional[str] = None):
+    """문장 n(0부터, 편 전체 순서)의 목소리 — say 를 주면 그 글로 만든 것, 없으면 지금 대본 글."""
+    job = _job(name)
+    lines = _all_lines(job, sid)
+    if not 0 <= n < len(lines):
+        raise HTTPException(404)
+    text = say if say is not None else (lines[n].get("say") or lines[n].get("cap") or "")
+    p = _line_path(job, sid, text)
+    if not p.exists():          # 예전 열쇠(사전 적용 전 글)로 만든 목소리 — 「3 목소리」를 다시 돌리기 전까지는 그 이름이다
+        from ..s2_tts import _h
+        p = job.sub("audio", sid) / "lines" / f"{_h(text.strip() or '...', str(job.setting('tts', 'voice')).upper(), float(job.setting('tts', 'speed')))}.wav"
+    if not p.exists():
+        raise HTTPException(404, "아직 이 글로 만든 목소리가 없어요")
+    return FileResponse(p, media_type="audio/wav", headers={"Cache-Control": "no-store"})
+
+
+class SynthReq(BaseModel):
+    say: str
+
+
+@app.post("/api/unit/{name}/{sid}/line/{n}/synth")
+def line_synth(name: str, sid: str, n: int, req: SynthReq) -> Dict[str, Any]:
+    """문장 하나만 지금 글(읽는 소리)대로 다시 합성. 편 전체 목소리(narration.wav)는 「3 목소리」가 이어 붙인다."""
+    from .. import tts as _tts
+    from ..supertonic import engine as st
+    job = _job(name)
+    say = (req.say or "").strip() or "..."
+    if not _tts.available():
+        raise HTTPException(400, "SuperTonic3 모델이 없어요")
+    p = _line_path(job, sid, say)
+    with _TTS_LOCK:
+        eng = st.Engine.get()
+        wav = eng.synth(say, voice=str(job.setting("tts", "voice")).upper(), speed=float(job.setting("tts", "speed")))
+        st.write_wav(p, wav, eng.sample_rate)
+        sec = len(wav) / float(eng.sample_rate)
+    import urllib.parse
+    return {"ok": True, "sec": round(sec, 2),
+            "url": f"/api/unit/{urllib.parse.quote(name)}/{sid}/line/{n}/audio?say={urllib.parse.quote(say)}&v={int(time.time())}"}
 
 
 IMAGE_CMDS = {"s3-images", "make", "all"}

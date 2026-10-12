@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import wave
 from pathlib import Path
 from typing import Any, Dict, List
@@ -27,6 +28,23 @@ def _wav_info(p: Path) -> tuple:
         return w.getframerate(), w.getsampwidth(), w.getnchannels(), w.getnframes()
 
 
+def spoken(say: str) -> str:
+    """엔진이 실제로 읽을 글(발음 사전·약어·연도 적용 뒤) — 캐시 열쇠. 사전을 고치면 그 말이 든 문장만 다시 합성된다."""
+    from . import pron
+    from .supertonic.pronunciation import load_pronunciation_map
+    key = pron.version()
+    if _PM.get("v") != key:
+        _PM["v"], _PM["m"] = key, load_pronunciation_map(pron.dict_path())
+    return _PM["m"].apply(say, spell_unknown_acronyms=True, convert_years=True)
+
+
+_PM: Dict[str, Any] = {}
+
+
+def line_file(d: Path, say: str, voice: str, speed: float) -> Path:
+    return d / "lines" / f"{_h(spoken(say), voice, speed)}.wav"
+
+
 def run(job: Job, only=None, force: bool = False, **_) -> None:
     c = config.load()["tts"]
     voice = str(job.setting("tts", "voice")).upper()
@@ -42,7 +60,8 @@ def run(job: Job, only=None, force: bool = False, **_) -> None:
         d = job.sub("audio", sid)
         ld = d / "lines"
         ld.mkdir(parents=True, exist_ok=True)
-        key = _h([ln.get("say") for _, ln in items], voice, speed, c["gap"], c["scene_gap"], c["lead"], c["tail"])
+        key = _h([spoken(ln.get("say") or ln.get("cap") or "") for _, ln in items], voice, speed,
+                 c["gap"], c["scene_gap"], c["lead"], c["tail"])
         old = config.read_json(d / "timing.json", {}) or {}
         if old.get("hash") == key and (d / "narration.wav").exists() and not force:
             log(f"  {sid} 음성은 그대로예요 ({old.get('duration', 0) / 60:.1f}분).")
@@ -54,7 +73,10 @@ def run(job: Job, only=None, force: bool = False, **_) -> None:
         made = 0
         for i, (sc, ln) in enumerate(items):
             say = (ln.get("say") or ln.get("cap") or "").strip() or "..."
-            p = ld / f"{_h(say, voice, speed)}.wav"
+            p = line_file(d, say, voice, speed)
+            old = ld / f"{_h(say, voice, speed)}.wav"       # 예전 열쇠(사전 적용 전 글)로 만든 것 — 소리는 같다, 옮겨 쓴다
+            if not p.exists() and old.exists() and not force:
+                shutil.copy2(old, p)
             if not p.exists() or force:
                 st.write_wav(p, eng.synth(say, voice=voice, speed=speed), eng.sample_rate)
                 made += 1
@@ -79,7 +101,7 @@ def run(job: Job, only=None, force: bool = False, **_) -> None:
                     n = wi.getnframes()
                     wo.writeframes(wi.readframes(n))
                 cues.append({"i": i, "scene": sc["n"], "chapter": sc["chapter"], "cap": ln.get("cap") or ln.get("say", ""),
-                             "start": round(t, 3), "end": round(t + n / rate, 3)})
+                             "start": round(t, 3), "end": round(t + n / rate, 3), "file": f.name})
                 t += n / rate
             wo.writeframes(silence(float(c["tail"])))
             total = t + float(c["tail"])

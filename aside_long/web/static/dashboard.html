@@ -5,11 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>롱폼 공방</title>
 <style>
-:root{--bg:#f6f3ec;--card:#fff;--ink:#22201c;--sub:#6b665c;--line:#e4ddd0;--acc:#c2410c;--acc2:#0f766e;--ok:#15803d;--warn:#b45309;--bad:#b91c1c}
+:root{--bg:#F6F1E8;--card:#fff;--ink:#1d2433;--sub:#64748b;--line:#e5ded2;--acc:#1F4E79;--acc2:#0f766e;--pri2:#9DC3E6;--ok:#15803d;--warn:#b45309;--bad:#b91c1c}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 "Malgun Gothic","Apple SD Gothic Neo",sans-serif}
-header{display:flex;align-items:center;gap:14px;padding:12px 20px;background:#22201c;color:#f6f3ec}
-header h1{font-size:18px;margin:0;font-weight:800;letter-spacing:-.3px}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 "Pretendard Variable",Pretendard,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--acc);color:#fff;position:sticky;top:0;z-index:6;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;font-weight:800;letter-spacing:-.02em}
+.who{font-size:12.5px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.dot{width:9px;height:9px;border-radius:50%;background:#94a3b8;display:inline-block;margin-right:4px}
+.dot.on{background:#4ade80}.dot.off{background:#f87171}
+header select{background:#fff;color:var(--ink);min-width:240px}
 header h1 small{font-weight:400;color:#c9c1b2;font-size:13px;margin-left:8px}
 header .sp{flex:1}
 header select{background:#3a362f;color:#fff;border:1px solid #57514a;border-radius:6px;padding:5px 8px}
@@ -65,10 +69,27 @@ body.resizing{cursor:ns-resize;user-select:none}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .empty{padding:40px;text-align:center;color:var(--sub)}
 
-nav.tabs-top{display:flex;gap:2px;margin-left:18px}
-nav.tabs-top button{background:none;border:none;color:#c9c1b2;font-weight:700;font-size:15px;padding:8px 14px;border-radius:7px}
-nav.tabs-top button.on{background:#f6f3ec;color:#22201c}
-header .stop{background:#3a362f;color:#fff;border-color:#57514a}
+nav.tabs-top{display:flex;gap:4px;margin-left:auto}
+nav.tabs-top button{background:none;border:none;color:#dbe7f3;font-weight:700;font-size:15px;padding:7px 13px;border-radius:8px}
+nav.tabs-top button.on{background:#fff;color:var(--acc)}
+header .stop{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.3)}
+.ln{border-left:3px solid var(--pri2);padding:6px 0 6px 10px;margin:8px 0}
+.lgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.lgrid label{margin:0 0 3px;color:var(--ink);font-weight:600}
+textarea.pron{background:#f4efe8}
+.ltools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:5px}
+.ltools audio{height:30px;width:250px}
+button.s{padding:3px 8px;font-size:12px}
+details.dict{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-top:16px}
+details.dict>summary{padding:12px 16px;cursor:pointer;font-weight:700}
+#dictBox{padding:0 16px 14px}
+.dictcols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.dictcols section{border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.dictlist{max-height:340px;overflow:auto}
+.dictrow{display:flex;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #f1ece3}
+.dictrow .dk{width:32%;font-family:Consolas,monospace;font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis}
+.dictrow .dn{width:46px;color:var(--sub);font-size:12px;text-align:right}
+.dictrow .di{flex:1;padding:4px 7px}
 .page{padding:16px 20px calc(var(--logh,210px) + 30px);max-width:1500px;margin:0 auto}
 .grid2{display:grid;grid-template-columns:380px 1fr;gap:16px}
 .stat{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -83,12 +104,16 @@ header .stop{background:#3a362f;color:#fff;border-color:#57514a}
 </head>
 <body>
 <header>
-  <h1>롱폼 공방</h1>
+  <h1>롱폼 · 공방</h1>
+  <select id="jobSel" title="작업(원고 묶음)" style="width:auto;max-width:340px"></select>
+  <span class="who">
+    <span><span class="dot" id="cldot"></span><span id="cltxt">Claude …</span></span>
+    <span><span class="dot" id="cxdot"></span><span id="cxtxt">Codex …</span></span>
+    <span><span class="dot" id="ttdot"></span><span id="tttxt">SuperTonic3 …</span></span>
+    <span id="busy" style="color:#fde68a;font-weight:700"></span>
+  </span>
   <nav class="tabs-top" id="nav"></nav>
-  <div class="sp"></div>
-  <span id="busy" class="muted" style="color:#fbbf24"></span>
-  <button class="stop" onclick="stopRun()">■ 멈춤</button>
-  <select id="jobSel" style="max-width:280px;width:auto"></select>
+  <button class="stop" onclick="stopRun()" title="돌고 있는 작업 멈추기">■ 멈춤</button>
 </header>
 <div class="page" id="page"></div>
 <div id="logbar" title="끌어서 높이 조절 · 두 번 누르면 접기/펴기"></div>
@@ -96,7 +121,7 @@ header .stop{background:#3a362f;color:#fff;border-color:#57514a}
 
 <script>
 let S = {jobs: []}, JOB = null, SID = null, U = null, PAGE = 'make', TAB = 'src', since = 0, DIRTY = false, SEL = new Set(), ACCS = null;
-const PAGES = [['make', '만들기'], ['dash', '대시보드'], ['edit', '수정'], ['up', '업로드'], ['set', '설정']];
+const PAGES = [['make', '① 원고'], ['dash', '② 만들기'], ['edit', '③ 결과 보기'], ['up', '④ 올리기'], ['set', '설정']];
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function api(url, opt = {}) {
@@ -113,7 +138,7 @@ async function refresh() {
   S = await api('/api/state');
   if (JOB && !job()) JOB = null;
   if (!JOB && S.jobs.length) JOB = S.jobs[0].name;
-  $('#jobSel').innerHTML = S.jobs.map(j => `<option value="${esc(j.name)}" ${j.name === JOB ? 'selected' : ''}>${esc(j.title || j.name)} (${esc(j.name)})</option>`).join('') || '<option>작업 없음 — 「만들기」에서 원고를 넣으세요</option>';
+  $('#jobSel').innerHTML = S.jobs.map(j => `<option value="${esc(j.name)}" ${j.name === JOB ? 'selected' : ''}>${esc(j.title || j.name)} (${esc(j.name)})</option>`).join('') || '<option>작업 없음 — 「① 원고」에서 원고를 넣으세요</option>';
   $('#busy').textContent = S.busy ? '● 작업 중: ' + (S.cmd || []).slice(0, 1).join(' ') : '';
   document.querySelectorAll('[data-run]').forEach(b => b.disabled = S.busy);
 }
@@ -214,7 +239,7 @@ function planCard(ok) {
       <button class="go" data-run onclick="bulk('make')" title="그림(Codex) → 영상 → 썸네일 (목소리가 없으면 먼저 만들어요)">▶ 4→6 그림·영상</button>
       <button class="pri" data-run onclick="bulk('all')" title="개작부터 썸네일까지 한 번에">▶ 전체 1→6</button>
     </div>
-    <p class="muted">진행은 「대시보드」에서 볼 수 있어요. 한 편이 실패해도 다음 편으로 넘어가요.</p>`
+    <p class="muted">진행은 「② 만들기」에서 볼 수 있어요. 한 편이 실패해도 다음 편으로 넘어가요.</p>`
     : '<div class="empty" style="padding:16px">왼쪽 「원고 분석」에서 구성을 확정하면 열려요.</div>'}`;
 }
 
@@ -315,7 +340,7 @@ async function uploadDocs(files) {
 // ══ 대시보드 — 단원 전체 현황 ══
 function pageDash() {
   const us = units();
-  if (!us.length) { $('#page').innerHTML = '<div class="card empty">작업이 없어요 — 「만들기」에서 원고를 넣으세요.</div>'; return }
+  if (!us.length) { $('#page').innerHTML = '<div class="card empty">작업이 없어요 — 「① 원고」에서 원고를 넣으세요.</div>'; return }
   const c = k => us.filter(k).length;
   const mins = us.reduce((a, u) => a + (u.audio_min || 0), 0);
   $('#page').innerHTML = `
@@ -351,7 +376,7 @@ function pageDash() {
         <td>${u.scenes ? pill(u.images + '/' + u.scenes, u.images >= u.scenes ? 'ok' : 'warn') : '—'}</td>
         <td>${u.video ? pill('완성', 'ok') : '—'}</td>
         <td>${u.posted ? `<a href="${esc(u.posted)}" target="_blank" onclick="event.stopPropagation()">올림</a>` : u.scheduled ? pill('예약 ' + esc(u.scheduled), 'ok') : u.upload_error ? pill('실패', 'bad') : '—'}</td></tr>`).join('')}
-    </table><p class="muted">체크한 편에만 위 버튼이 적용돼요(예: 두 편 골라 「4 그림」). 줄을 누르면 「수정」으로 가요. 이미 된 단계는 건너뛰고 없는 것만 해요.</p></div>`;
+    </table><p class="muted">체크한 편에만 위 버튼이 적용돼요(예: 두 편 골라 「4 그림」). 줄을 누르면 「③ 결과 보기」로 가요. 이미 된 단계는 건너뛰고 없는 것만 해요.</p></div>`;
   dUpd();
 }
 function dTog(p, on) { on ? SEL.add(p) : SEL.delete(p); dUpd() }
@@ -379,7 +404,7 @@ async function loadUnit() {
   if (PAGE === 'edit' && $('#main')) renderMain(); else if (PAGE === 'up' && $('#tab')) await tabUp();
 }
 async function pageEdit() {
-  if (!units().length) { $('#page').innerHTML = '<div class="card empty">작업이 없어요 — 「만들기」에서 원고를 넣으세요.</div>'; return }
+  if (!units().length) { $('#page').innerHTML = '<div class="card empty">작업이 없어요 — 「① 원고」에서 원고를 넣으세요.</div>'; return }
   $('#page').innerHTML = unitPicker('pageEdit') + '<div class="card" id="main"></div>';
   await loadUnit();
 }
@@ -562,7 +587,7 @@ function tabScript() {
   if (!s) { $('#tab').innerHTML = '<div class="empty">아직 대본이 없어요 — 「2 대본·채점」을 눌러 주세요.</div>'; return }
   const sc = U.score;
   const imgOf = n => U.images.find(i => i.n === n);
-  let n = 0;
+  let n = 0, GI = 0;
   $('#tab').innerHTML = `
     ${sc ? `<div class="cols" style="margin-bottom:8px">
       <div><span class="score">${sc.score}</span><span class="muted"> / 100 ${sc.first_score !== sc.score ? '(초안 ' + sc.first_score + '점 → 고쳐 씀)' : ''}</span>
@@ -590,11 +615,27 @@ function tabScript() {
             <div class="muted">씬 ${n} · 인물 <input value="${esc((scn.image.chars || []).join(','))}" data-ci="${ci}" data-si="${si}" data-k="chars" style="width:90px;padding:2px 4px"></div></div>
           <div>
             <textarea rows="2" data-ci="${ci}" data-si="${si}" data-k="prompt" title="그림 프롬프트(영어)">${esc(scn.image.prompt)}</textarea>
-            <div class="line muted" style="margin-top:6px"><span>읽기(say) — 숫자는 한글로</span><span>자막(cap) — 숫자는 아라비아</span><span></span></div>
-            ${scn.lines.map((ln, li) => `<div class="line"><textarea rows="1" data-ci="${ci}" data-si="${si}" data-li="${li}" data-k="say">${esc(ln.say)}</textarea><textarea rows="1" data-ci="${ci}" data-si="${si}" data-li="${li}" data-k="cap">${esc(ln.cap)}</textarea><button title="문장 삭제" onclick="delLine(${ci},${si},${li})">×</button></div>`).join('')}
+            ${scn.lines.map((ln, li) => { const gi = GI++; return `<div class="ln" data-gi="${gi}">
+              <div class="lgrid">
+                <div><label>문장 ${gi + 1} · 자막 <span class="muted">(화면에 보이는 글 — 숫자는 아라비아)</span></label>
+                  <textarea rows="2" data-ci="${ci}" data-si="${si}" data-li="${li}" data-k="cap">${esc(ln.cap)}</textarea></div>
+                <div><label>읽는 소리 <span class="muted">(TTS 가 글자 그대로 읽어요)</span></label>
+                  <textarea rows="2" class="pron" spellcheck="false" data-ci="${ci}" data-si="${si}" data-li="${li}" data-k="say">${esc(ln.say)}</textarea></div>
+              </div>
+              <div class="ltools">
+                <button class="s" onclick="mkSay(this)" title="자막에서 괄호·따옴표를 걷고 숫자·영문을 소리대로">자막에서 발음 만들기</button>
+                <button class="s" onclick="cvSay(this,'numbers')">숫자를 소리대로</button>
+                <button class="s" onclick="cvSay(this,'roman')">영문을 소리대로</button>
+                <audio controls preload="none" src="/api/unit/${encodeURIComponent(JOB)}/${SID}/line/${gi}/audio" onerror="this.title='아직 이 글로 만든 목소리가 없어요 — 「발음대로 다시 합성」'"></audio>
+                <button class="s" onclick="resynth(this)" title="이 문장만 지금 「읽는 소리」대로 다시 합성">발음대로 다시 합성</button>
+                <span class="muted lmeta"></span>
+                <span style="flex:1"></span>
+                <button class="s" title="문장 삭제" onclick="delLine(${ci},${si},${li})">×</button>
+              </div></div>`}).join('')}
             <button onclick="addLine(${ci},${si})">+ 문장</button>
           </div>
-        </div>`}).join('')}`).join('')}`;
+        </div>`}).join('')}`).join('')}
+    <details class="dict" ontoggle="if(this.open)loadDict()"><summary>발음 사전 <span class="muted" style="font-weight:400">눌러서 펼쳐요 — 영문이 이상하게 읽히면 여기에 넣어요</span></summary><div id="dictBox"></div></details>`;
   $('#tab').oninput = () => { DIRTY = true };
 }
 function collect() {
@@ -686,6 +727,82 @@ async function post(dry) {
   await runCmd('post', args);
 }
 
+// ── 읽는 소리 · 문장별 목소리 · 발음 사전 ──
+const lnBox = b => b.closest('.ln');
+const sayEl = b => lnBox(b).querySelector('textarea[data-k="say"]');
+const capEl = b => lnBox(b).querySelector('textarea[data-k="cap"]');
+async function mkSay(b) {
+  const r = await api('/api/pronounce', {method: 'POST', body: JSON.stringify({text: capEl(b).value})});
+  const el = sayEl(b);
+  if (el.value.trim() && el.value.trim() !== r.text && !confirm(`읽는 소리를 바꿀까요?\n\n지금: ${el.value}\n새것: ${r.text}`)) return;
+  el.value = r.text; DIRTY = true;
+}
+async function cvSay(b, kind) {
+  const el = sayEl(b);
+  const r = await api('/api/speak-' + kind, {method: 'POST', body: JSON.stringify({text: el.value})});
+  if (r.text !== el.value) { el.value = r.text; DIRTY = true }
+}
+async function resynth(b) {
+  const box = lnBox(b), gi = +box.dataset.gi, meta = box.querySelector('.lmeta'), au = box.querySelector('audio');
+  b.disabled = true; const t0 = Date.now();
+  const tick = setInterval(() => { meta.textContent = `합성 중 · ${Math.round((Date.now() - t0) / 1000)}초` }, 500);
+  try {
+    const r = await api(`/api/unit/${encodeURIComponent(JOB)}/${SID}/line/${gi}/synth`, {method: 'POST', body: JSON.stringify({say: sayEl(b).value})});
+    au.src = r.url; au.play().catch(() => {});
+    meta.textContent = `tts · ${r.sec}초 · 방금 다시 만듦` + (DIRTY ? ' — 「대본 저장」 뒤 「3 목소리」로 영상에 반영' : ' — 「3 목소리」로 영상에 반영');
+  } catch (e) { meta.textContent = '합성 실패' }
+  finally { clearInterval(tick); b.disabled = false }
+}
+
+let DICT = {rules: {}, missing: []};
+async function loadDict() {
+  const box = $('#dictBox'); if (!box) return;
+  box.innerHTML = '<p class="muted">불러오는 중…</p>';
+  const d = await api(`/api/pron-dict?job=${encodeURIComponent(JOB)}&sid=${SID}`);
+  DICT = {rules: d.rules, missing: d.missing, path: d.path};
+  renderDict();
+}
+function renderDict(find = '') {
+  const box = $('#dictBox'); if (!box) return;
+  const keys = Object.keys(DICT.rules).sort((a, b) => a.localeCompare(b));
+  const shown = keys.filter(k => !find || k.toLowerCase().includes(find.toLowerCase()) || DICT.rules[k].includes(find));
+  box.innerHTML = `<div class="dictcols">
+    <section><h3>아직 없는 말</h3><p class="muted">이 편에 나오는데 사전에 없는 영문 — 많이 나온 순서. 읽는 소리를 적으면 저장할 때 들어가요.</p>
+      <div class="dictlist">${DICT.missing.map((m, i) => `<div class="dictrow"><span class="dk">${esc(m.word)}</span><span class="dn">${m.n}회</span>
+        <input class="di" data-miss="${i}" value="${esc(m.guess || '')}" placeholder="읽는 소리"><button class="s" onclick="DICT.missing.splice(${i},1);renderDict($('#dictFind')?.value||'')">×</button></div>`).join('') || '<p class="muted">없어요 — 모든 영문이 사전에 있어요.</p>'}</div></section>
+    <section><h3>사전 <span class="muted">${keys.length}개</span></h3>
+      <div class="row"><input id="dAddK" placeholder="영문 (예: DECODE)" style="flex:1"><input id="dAddV" placeholder="읽는 소리 (예: 디코드)" style="flex:1"><button class="s" onclick="dictAdd()">넣기</button></div>
+      <input id="dictFind" type="search" placeholder="찾기 — 영문이나 한글로" value="${esc(find)}" oninput="renderDict(this.value)" style="margin:6px 0">
+      <div class="dictlist">${shown.slice(0, 300).map(k => `<div class="dictrow"><span class="dk">${esc(k)}</span>
+        <input class="di" data-key="${esc(k)}" value="${esc(DICT.rules[k])}" onchange="DICT.rules[this.dataset.key]=this.value"><button class="s" onclick="delete DICT.rules[this.previousElementSibling.dataset.key];renderDict($('#dictFind').value)">×</button></div>`).join('')}</div></section>
+  </div>
+  <div class="row" style="margin-top:10px"><span class="muted">${esc(DICT.path || '')}</span><span style="flex:1"></span>
+    <button class="pri" onclick="dictSave()">사전 저장</button></div>
+  <p class="muted">사전을 저장한 뒤 「3 목소리」를 누르면 바뀐 말이 든 문장만 다시 합성돼요. 읽는 소리 칸의 「영문을 소리대로」도 이 사전을 써요.</p>`;
+  const f = $('#dictFind'); if (find && f) { f.focus(); f.setSelectionRange(find.length, find.length) }
+}
+function dictAdd() {
+  const k = $('#dAddK').value.trim(), v = $('#dAddV').value.trim();
+  if (!k || !v) return alert('영문과 읽는 소리를 모두 적어 주세요');
+  DICT.rules[k] = v; DICT.missing = DICT.missing.filter(m => m.word !== k); renderDict();
+}
+async function dictSave() {
+  document.querySelectorAll('#dictBox [data-key]').forEach(i => DICT.rules[i.dataset.key] = i.value);
+  document.querySelectorAll('#dictBox [data-miss]').forEach(i => { const m = DICT.missing[+i.dataset.miss]; if (m && i.value.trim()) DICT.rules[m.word] = i.value.trim() });
+  const r = await api('/api/pron-dict', {method: 'POST', body: JSON.stringify({rules: DICT.rules})});
+  alert(`사전을 저장했어요 (${r.count}개)`); loadDict();
+}
+async function checkTools() {
+  const t = await api('/api/tools').catch(() => null);
+  if (t) {
+    const c = t.claude || {};
+    $('#cldot').className = 'dot ' + (c.logged_in ? 'on' : 'off');
+    $('#cltxt').textContent = !c.installed ? 'Claude 없음' : c.logged_in ? `Claude · ${c.email}${c.plan ? ' · ' + c.plan : ''}` : 'Claude 로그인 필요';
+    $('#ttdot').className = 'dot ' + (t.tts ? 'on' : 'off'); $('#tttxt').textContent = t.tts ? 'SuperTonic3' : 'SuperTonic3 없음';
+  }
+  const x = await fetch('/api/codex').then(r => r.ok ? r.json() : null).catch(() => null);
+  if (x) { $('#cxdot').className = 'dot ' + (x.logged_in ? 'on' : 'off'); $('#cxtxt').textContent = x.logged_in ? `Codex · ${x.email || ''}${x.plan ? ' · ' + x.plan : ''}` : 'Codex 로그인 필요' }
+}
 async function openFolder() { await api('/api/open', {method: 'POST', body: JSON.stringify({path: U.folder})}) }
 
 // ── 로그 ──
@@ -725,7 +842,7 @@ async function pollLog() {
   bar.addEventListener('dblclick', () => { cur = set(cur > MIN ? MIN : last); save() });
   window.addEventListener('resize', () => { cur = set(cur) });
 })();
-show('make').then(pollLog);
+show('make').then(pollLog); checkTools(); setInterval(checkTools, 60000);
 </script>
 </body>
 </html>
