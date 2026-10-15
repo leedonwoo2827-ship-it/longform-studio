@@ -36,7 +36,34 @@ FALLBACK_VERSION = "0.130.0"
 FALLBACK_UA = f"codex_cli_rs/{FALLBACK_VERSION} (Windows 11; x64) aside-long"
 AUTH_PATH = Path(os.environ.get("CODEX_AUTH_PATH", str(Path.home() / ".codex" / "auth.json")))
 VERSION_PATH = Path.home() / ".codex" / "version.json"
-CODEX_MODEL = os.environ.get("CODEX_IMAGE_MODEL", "gpt-5.5")   # 요청 모델 — 그림은 그 안의 image_generation 도구가
+CONFIG_TOML = Path.home() / ".codex" / "config.toml"
+FALLBACK_MODEL = "gpt-6-astra"
+
+
+def model() -> str:
+    """요청에 싣는 추론 모델(그림은 그 안의 image_generation 도구가 그린다).
+
+    ★ 고정값 gpt-5.5 로 두었다가 「The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account」
+      (HTTP 400)로 그림이 전부 실패했다(2026-10-15). Codex 가 받는 모델은 계속 바뀐다 —
+      그래서 **Codex 자신의 설정(~/.codex/config.toml 의 model)** 을 따른다. 순서:
+      환경변수 CODEX_IMAGE_MODEL → 설정 image.model → ~/.codex/config.toml → FALLBACK_MODEL."""
+    v = os.environ.get("CODEX_IMAGE_MODEL", "").strip()
+    if v:
+        return v
+    try:
+        from . import config
+        v = str(config.load().get("image", {}).get("model") or "").strip()
+        if v:
+            return v
+    except Exception:       # noqa: BLE001
+        pass
+    try:
+        m = re.search(r'(?m)^\s*model\s*=\s*"([^"]+)"', CONFIG_TOML.read_text(encoding="utf-8"))
+        if m:
+            return m.group(1).strip()
+    except Exception:       # noqa: BLE001
+        pass
+    return FALLBACK_MODEL
 BACKGROUND = "opaque"            # 기본 auto 면 가끔 투명 PNG 가 나온다(backplate 실측) — 못박는다
 TOTAL_TIMEOUT = 300
 STALL_TIMEOUT = 120.0
@@ -51,6 +78,10 @@ class CodexHTTPError(RuntimeError):
 
 class NotAuthenticated(CodexHTTPError):
     """로그인이 없거나 만료 → 설정 탭 「Codex 계정」에서 로그인."""
+
+
+class Fatal(CodexHTTPError):
+    """다시 해도 안 되는 요청 오류(지원하지 않는 모델 등) — 배치를 바로 멈춘다."""
 
 
 class UsageLimit(CodexHTTPError):
@@ -271,6 +302,8 @@ def _http_error(e: urllib.error.HTTPError) -> CodexHTTPError:
         return UsageLimit(f"Codex 사용 한도에 걸렸어요: {body[:200]}", resets_at=float(resets) if resets else None, plan=plan)
     if e.code == 401:
         return CodexHTTPError(f"HTTP 401: {body[:200]}", status=401)
+    if e.code in (400, 403, 404) and re.search(r"not supported|unsupported|does not exist|model|invalid", body, re.I):
+        return Fatal(f"Codex 가 요청을 거부했어요(HTTP {e.code}): {body[:250]}", status=e.code)
     return CodexHTTPError(f"HTTP {e.code}: {body[:300]}", status=e.code)
 
 
@@ -287,7 +320,7 @@ def check_size(size: str) -> None:
 def _payload(prompt: str, size: str) -> Dict[str, Any]:
     text = (f"Use the image_generation tool to render the following. Request: {prompt}. "
             f"Output format: png. Size: {size}. Do not include explanatory text — produce only the image.")
-    return {"model": CODEX_MODEL, "stream": True, "instructions": "You are an image generation assistant.",
+    return {"model": model(), "stream": True, "instructions": "You are an image generation assistant.",
             "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}],
             "tools": [{"type": "image_generation", "output_format": "png", "background": BACKGROUND, "size": size}],
             "tool_choice": "auto", "parallel_tool_calls": False, "store": False,
@@ -353,7 +386,7 @@ def generate(prompt: str, size: str = "1536x864") -> bytes:
 
 def probe() -> Dict[str, Any]:
     """한도만 알고 싶을 때 — 아주 짧은 글 요청 하나(그림 없음)로 응답 헤더를 받는다."""
-    body = {"model": CODEX_MODEL, "stream": True, "instructions": "Reply with OK.",
+    body = {"model": model(), "stream": True, "instructions": "Reply with OK.",
             "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "OK"}]}],
             "store": False, "reasoning": {"effort": "low", "summary": "auto"}, "text": {"verbosity": "low"}}
     deadline = time.monotonic() + 60

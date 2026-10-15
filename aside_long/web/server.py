@@ -280,7 +280,7 @@ def delete_job(name: str) -> Dict[str, Any]:
 
 
 EDITABLE = {"render": ["caption_font", "caption_size", "image_h", "max_line_chars"],
-            "image": ["workers", "engine", "wait_on_limit"], "youtube": ["visibility", "ai_disclosure"],
+            "image": ["workers", "engine", "wait_on_limit", "model"], "youtube": ["visibility", "ai_disclosure"],
             "long": ["target_minutes", "style"], "tts": ["voice", "speed"]}
 
 
@@ -433,8 +433,8 @@ def _image_busy() -> bool:
 
 @app.get("/api/codex")
 def codex_status() -> Dict[str, Any]:
-    from .. import codex_auth
-    return codex_auth.status()
+    from .. import codex_api, codex_auth
+    return {**codex_auth.status(), "model": codex_api.model()}
 
 
 @app.post("/api/codex/login")

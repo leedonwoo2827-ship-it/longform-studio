@@ -263,11 +263,11 @@ def run(job: Job, only=None, force: bool = False, scenes_only: Optional[List[int
                         limit_hit["resets_at"] = getattr(e, "resets_at", None)
                         limit_hit["msg"] = str(e)
                         return it, False
-                    except Exception as e:      # noqa: BLE001 — 한 장 실패는 재시도, 로그인 문제는 바로 멈춤
-                        from .codex_api import NotAuthenticated
-                        if isinstance(e, NotAuthenticated):
+                    except Exception as e:      # noqa: BLE001 — 한 장 실패는 재시도, 로그인·모델 문제는 바로 멈춤
+                        from .codex_api import Fatal, NotAuthenticated
+                        if isinstance(e, (NotAuthenticated, Fatal)):
                             stop.set()
-                            limit_hit["auth"] = str(e)
+                            limit_hit["auth" if isinstance(e, NotAuthenticated) else "fatal"] = str(e)
                             return it, False
                         detail(f"  {it['key']} 실패 {attempt + 1}: {e}")
                         time.sleep(6 * 2 ** attempt)
@@ -291,6 +291,11 @@ def run(job: Job, only=None, force: bool = False, scenes_only: Optional[List[int
                         log(f"    ✗ {it['key']} 못 그렸어요")
             if done:
                 detail(f"  s3 {sid}: {done}장 {time.time() - t0:.0f}초")
+            if limit_hit.get("fatal"):
+                from .codex_api import model
+                log(f"  ✗ {limit_hit['fatal']}")
+                raise SystemExit(f"그림 모델({model()})을 Codex 가 받지 않아요 — 설정 탭 「그림 모델」을 바꾸거나 비워 두면 "
+                                 f"Codex 설정(~/.codex/config.toml)의 모델을 써요. 고친 뒤 다시 눌러 주세요.")
             if limit_hit.get("auth"):
                 log(f"  ✗ {limit_hit['auth']}")
                 raise SystemExit("Codex 로그인이 필요해요 — 설정 탭 「Codex 계정」에서 로그인한 뒤 「4 그림」을 다시 눌러 주세요.")

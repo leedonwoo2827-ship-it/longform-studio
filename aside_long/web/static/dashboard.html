@@ -479,6 +479,7 @@ async function pageSet() {
         <div class="row"><div style="flex:1"><label>그림 높이(px, 최대 1080)</label><input id="gIh" type="number" value="${cfg.render.image_h}"></div>
           <div style="flex:1"><label>그림 동시 장수</label><input id="gW" type="number" min="1" max="6" value="${cfg.image.workers}"></div></div>
         <div class="row"><div style="flex:1"><label>그림 엔진</label><select id="gEng">${opt([['codex-api', 'Codex 직접 — 그림 요청만 (권장, 한도 적게 씀)'], ['codex-cli', 'codex exec — 예전 방식 (예비)']], cfg.image.engine)}</select></div>
+          <div style="flex:1"><label>그림 모델 <span class="muted">(비우면 Codex 설정을 따름 — 예: gpt-6-astra)</span></label><input id="gModel" value="${esc(cfg.image.model || '')}" placeholder="Codex 설정 따름"></div>
           <div style="flex:1"><label>한도에 걸리면</label><select id="gWait">${opt([['true', '풀릴 때까지 기다렸다 이어 그리기'], ['false', '멈추기']], cfg.image.wait_on_limit)}</select></div></div>
         <div class="row"><div style="flex:1"><label>기본 목표 길이(분)</label><input id="gM" type="number" value="${cfg.long.target_minutes}"></div>
           <div style="flex:1"><label>기본 화풍</label><select id="gS">${opt(sty, cfg.long.style)}</select></div></div>
@@ -507,6 +508,7 @@ async function codexCard() {
       <tr><td class="muted">상태</td><td>${!c.installed ? pill('codex 없음', 'bad') : c.logging_in ? pill('로그인 진행 중 — 브라우저를 확인하세요', 'warn') : c.logged_in ? pill('로그인됨', 'ok') : pill('로그인 안 됨', 'bad')}</td></tr>
       <tr><td class="muted">계정</td><td>${esc(c.email || '—')}</td></tr>
       <tr><td class="muted">요금제</td><td>${esc(plan)}${c.workspace ? ' ' + pill('회사 크레딧을 써요', 'warn') : ''}${c.until ? ` <span class="muted">· ${esc(String(c.until).slice(0, 10))}까지</span>` : ''}</td></tr>
+      <tr><td class="muted">그림 모델</td><td><code>${esc(c.model || '')}</code> <span class="muted">(설정 「그림 모델」이 비어 있으면 Codex 설정 ~/.codex/config.toml 의 model)</span></td></tr>
       <tr><td class="muted">한도</td><td id="cxQuota"><span class="muted">「한도 확인」을 누르면 5시간·7일 한도를 읽어요(그림 없는 아주 짧은 요청 1번)</span></td></tr>
     </table>
     <div class="row" style="margin-top:10px">
@@ -552,7 +554,7 @@ async function delJob() {
 async function saveCfg() {
   await api('/api/config', {method: 'PUT', body: JSON.stringify({
     render: {caption_font: $('#gF').value, caption_size: +$('#gSz').value, max_line_chars: +$('#gMl').value, image_h: Math.min(1080, +$('#gIh').value)},
-    image: {workers: +$('#gW').value, engine: $('#gEng').value, wait_on_limit: $('#gWait').value === 'true'}, long: {target_minutes: +$('#gM').value, style: $('#gS').value},
+    image: {workers: +$('#gW').value, engine: $('#gEng').value, wait_on_limit: $('#gWait').value === 'true', model: $('#gModel').value.trim()}, long: {target_minutes: +$('#gM').value, style: $('#gS').value},
     tts: {voice: $('#gV').value, speed: +$('#gSp').value},
     youtube: {visibility: $('#gVis').value, ai_disclosure: $('#gAi').value === 'true'}})});
   alert('저장했어요');
