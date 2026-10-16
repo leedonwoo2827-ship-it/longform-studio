@@ -59,7 +59,7 @@ def parse_name(stem: str) -> Optional[tuple]:
 
 def unit_dirname(prefix: str, section_title: str) -> str:
     t = re.sub(r"^\d+절\s*", "", section_title).strip()
-    t = re.sub(r'[\\/:*?"<>|]', "", t)[:40].strip()
+    t = re.sub(r'[\\/:*?"<>|\'‘’“”`]', "", t)[:40].strip()     # 따옴표도 뺀다 — ffmpeg 목록·셸 인자가 깨진다
     return f"{prefix}_{t}" if t else prefix
 
 

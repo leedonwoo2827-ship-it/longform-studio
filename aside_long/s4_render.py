@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import shutil
 import struct
@@ -269,7 +270,11 @@ def run(job: Job, only=None, force: bool = False, **_) -> None:
             if made % 5 == 0 or k == len(rows) - 1:
                 log(f"    … {k + 1}/{len(rows)} 씬")
         lst = work / "clips.txt"
-        lst.write_text("".join(f"file '{p.resolve().as_posix()}'\n" for p in files), encoding="utf-8")
+        # ★ 목록은 work 기준 **상대 경로**로 — 폴더 이름에 작은따옴표가 있으면(「'보국안민'의」) concat 목록의
+        #   'file …' 따옴표가 깨져 경로가 잘린다(2026-10-16 1-24 실패). 그래도 남는 따옴표는 concat 규칙대로 '\'' 로.
+        def rel(p: Path) -> str:
+            return os.path.relpath(p.resolve(), work.resolve()).replace(os.sep, "/").replace("'", "'\\''")
+        lst.write_text("".join(f"file '{rel(p)}'\n" for p in files), encoding="utf-8")
         audio = (job.sub("audio", sid) / "narration.wav").resolve()
         final = out_dir / f"{sid}.mp4"
         log("  씬을 이어 붙이고 목소리를 입히는 중이에요 …")
