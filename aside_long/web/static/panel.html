@@ -83,12 +83,12 @@ function status(u) {
 function list() {
   const j = S.jobs.find(x => x.name === JOB); if (!j) { $('#list').innerHTML = ''; return }
   $('#list').innerHTML = `<div class="muted" style="margin:6px 0">영상 ${j.units.filter(u => u.video).length}/${j.units.length}편</div>` + j.units.map(u => `
-    <div class="item ${u.prefix === SID ? 'sel' : ''}" onclick="SID='${u.prefix}';list();detail()">
+    <div class="item ${u.prefix === SID ? 'sel' : ''}" onclick="SID='${u.prefix}';list();detail(true)">
       <div class="thumb" style="${u.thumb ? `background-image:url('${u.thumb}')` : ''}"></div>
       <div><div class="t">${esc(u.prefix)} · ${esc(u.yt_title || u.section)}</div><div class="h">${status(u)}${u.audio_min ? u.audio_min + '분' : ''}</div></div>
     </div>`).join('');
 }
-async function detail() {
+async function detail(scroll = false) {
   const U = await api(`/api/unit/${encodeURIComponent(JOB)}/${SID}`), up = U.upload || {}, m = up.meta, st = up.state || {};
   const cp = (id, t) => `<div class="lab"><span>${t}</span><button onclick="navigator.clipboard.writeText(document.getElementById('${id}').value);this.textContent='복사됨'">복사</button></div>`;
   $('#detail').innerHTML = `<div class="card">
@@ -108,7 +108,10 @@ async function detail() {
     ${cp('g', '태그')}<textarea id="g" rows="2" readonly>${esc(m.tags.join(', '))}</textarea>
     ${cp('c', '고정 댓글')}<textarea id="c" rows="2" readonly>${esc(m.pinned_comment)}</textarea>` : ''}
     ${U.thumb ? `<div class="lab"><span>썸네일</span></div><img src="${U.thumb}" style="width:100%;border-radius:8px">` : ''}
+    <div style="margin-top:8px;text-align:right"><button onclick="SID=null;$('#detail').innerHTML='';list()">닫기</button></div>
   </div>`;
+  // ★ 올리기 칸은 목록 위에 펼쳐진다 — 목록을 내려 본 채로 누르면 화면 밖이라 「반응이 없는」 것처럼 보였다(2026-10-18)
+  if (scroll) window.scrollTo({top: 0, behavior: 'smooth'});
 }
 async function runArgs(args) { await api('/api/run', {method: 'POST', body: JSON.stringify({args})}); load() }
 async function stopRun() { await api('/api/stop', {method: 'POST'}); load() }
