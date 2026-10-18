@@ -16,6 +16,12 @@ FMT = "%Y-%m-%d %H:%M"
 # 롱폼은 쇼츠보다 드물게 — 하루 1편 이하가 기본. weekdays: 0=월 … 6=일
 PATTERNS: Dict[str, Dict] = {
     "daily":      {"label": "매일 1편 · 정한 시각 (재생목록별 시각)", "days": [0, 1, 2, 3, 4, 5, 6], "time": "17:00"},
+    # 간격 — 시작일의 「시작 시각」부터 N시간마다 한 편(밤·새벽 칸도 포함)
+    "every-24":   {"label": "24시간 간격 (시작 시각부터)", "every_h": 24, "time": "17:00"},
+    "every-12":   {"label": "12시간 간격 (시작 시각부터)", "every_h": 12, "time": "17:00"},
+    "every-8":    {"label": "8시간 간격 (시작 시각부터)", "every_h": 8, "time": "17:00"},
+    "every-6":    {"label": "6시간 간격 (시작 시각부터)", "every_h": 6, "time": "17:00"},
+    "every-3":    {"label": "3시간 간격 (시작 시각부터)", "every_h": 3, "time": "17:00"},
     "daily-19":   {"label": "매일 1편 · 19:00 (주말 20:00)", "days": [0, 1, 2, 3, 4, 5, 6], "time": "19:00", "weekend": "20:00"},
     "mwf-19":     {"label": "주 3편 · 월·수·금 19:00 (추천)", "days": [0, 2, 4], "time": "19:00"},
     "tf-19":      {"label": "주 2편 · 화·금 19:00", "days": [1, 4], "time": "19:00"},
@@ -78,6 +84,18 @@ def next_slots(n: int, account: Optional[str] = None, start: Optional[datetime] 
         p["time"], p["weekend"] = at, None
     busy = set(taken(account))
     earliest = datetime.now() + timedelta(minutes=30)       # Studio 는 너무 가까운 예약을 받지 않는다
+    if p.get("every_h"):            # 간격: (시작일 or 오늘) 의 시작 시각부터 N시간씩 — 지난 칸·이미 찬 칸은 건너뛴다
+        h, m = map(int, p["time"].split(":"))
+        t = (start or datetime.now()).replace(hour=h, minute=m, second=0, microsecond=0)
+        step = timedelta(hours=int(p["every_h"]))
+        out_i: List[datetime] = []
+        for _ in range(5000):
+            if t >= earliest and t.strftime(FMT) not in busy:
+                out_i.append(t)
+                if len(out_i) >= n:
+                    break
+            t += step
+        return out_i
     cur = max(start, earliest) if start else earliest
     day = cur.replace(hour=0, minute=0, second=0, microsecond=0)
     out: List[datetime] = []
