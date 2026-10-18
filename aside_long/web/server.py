@@ -17,7 +17,7 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
@@ -136,7 +136,8 @@ def index() -> str:
 
 
 @app.get("/api/plan")
-def plan_preview(job: str, only: str = "", pattern: str = "", start: str = "", account: str = "") -> Dict[str, Any]:
+def plan_preview(job: str, only: str = "", pattern: str = "", start: str = "", account: str = "",
+                 time_: str = Query("", alias="time"), playlist: str = "") -> Dict[str, Any]:
     """한 번에 예약 미리보기 — 올릴 편과 배정될 시각(실제로 올리지 않는다)."""
     from .. import accounts, schedule
     from ..cli import ready
@@ -146,12 +147,26 @@ def plan_preview(job: str, only: str = "", pattern: str = "", start: str = "", a
         acc = accounts.get(account or None)
     except SystemExit as e:
         raise HTTPException(400, str(e.code))
+    at = time_ or (schedule.playlist_times().get(playlist) if playlist else None)
     when = schedule.next_slots(len(left), acc["name"], start=schedule.parse_when(start) if start else None,
-                               pat=pattern or None)
+                               pat=pattern or None, at=at)
     rows = [{"sid": sid, "section": (j.unit(sid).section if j.unit(sid) else ""), "when": w.strftime(schedule.FMT),
              "dow": "월화수목금토일"[w.weekday()]} for sid, w in zip(left, when)]
     return {"rows": rows, "ready": left, "patterns": {k: v["label"] for k, v in schedule.PATTERNS.items()},
-            "default": schedule.DEFAULT}
+            "default": schedule.DEFAULT, "times": schedule.playlist_times(), "time": at or ""}
+
+
+class PlTimeReq(BaseModel):
+    playlist: str
+    time: str
+
+
+@app.put("/api/playlist-time")
+def playlist_time(req: PlTimeReq) -> Dict[str, Any]:
+    """재생목록별 시작 시각 기억(playlists.json)."""
+    from .. import schedule
+    schedule.set_playlist_time(req.playlist, req.time)
+    return {"ok": True, "times": schedule.playlist_times()}
 
 
 @app.get("/api/state")

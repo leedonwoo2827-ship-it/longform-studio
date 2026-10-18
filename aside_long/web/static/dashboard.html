@@ -453,12 +453,13 @@ async function planCard() {
   if (!ACCS) ACCS = await api('/api/accounts');
   const pv = await api(`/api/plan?job=${encodeURIComponent(JOB)}`);
   if (!PLAN.sel) PLAN.sel = new Set(pv.ready);
-  PLAN.patterns = pv.patterns;
+  PLAN.patterns = pv.patterns; PLAN.times = pv.times || {};
   const pat = localStorage.getItem('plan_pat') || pv.default;
   el.innerHTML = `<h2>한 번에 예약 <span class="muted">— 고른 편을 시각 칸에 차례로 넣고, 한 편씩 Studio 「예약 공개」로 올려요</span></h2>
     <div class="row">
       <label style="margin:0">채널</label><select id="plAcc" style="width:auto">${ACCS.accounts.map(a => `<option value="${esc(a.name)}" ${a.name === ACCS.current ? 'selected' : ''}>${esc(a.label || a.name)}</option>`).join('')}</select>
-      <label style="margin:0">재생목록</label><input id="plList" value="${esc(j.settings.playlist || '')}" placeholder="재생목록 제목 (없으면 만들어요)" style="width:300px" onchange="savePlaylist(this.value)">
+      <label style="margin:0">재생목록</label><input id="plList" value="${esc(j.settings.playlist || '')}" placeholder="재생목록 제목 (없으면 만들어요)" style="width:260px" onchange="savePlaylist(this.value);$('#plTime').value=(PLAN.times||{})[this.value.trim()]||$('#plTime').value">
+      <label style="margin:0" title="재생목록마다 기억해요 — 예: 한국사 17:00, 다른 시리즈 17:05">시작 시각</label><input id="plTime" type="time" style="width:auto" value="${esc((pv.times || {})[(j.settings.playlist || '').trim()] || '17:00')}" onchange="saveTime()">
       <label style="margin:0">패턴</label><select id="plPat" style="width:auto">${Object.entries(pv.patterns).map(([k, t]) => `<option value="${k}" ${k === pat ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>
       <label style="margin:0">시작일</label><input id="plStart" type="date" style="width:auto" value="${esc(localStorage.getItem('plan_start') || '')}">
     </div>
@@ -468,6 +469,10 @@ async function planCard() {
       <span class="muted">한 편씩 차례로 올려요(편당 몇 분). 왼쪽 Studio 창·오른쪽 패널에서 진행이 보여요. 실패한 편은 다시 누르면 그것만 해요.</span></div>
     <div id="plOut" style="margin-top:8px"></div>`;
 }
+async function saveTime() {
+  const pl = $('#plList').value.trim(), t = $('#plTime').value;
+  if (pl && t) { const r = await api('/api/playlist-time', {method: 'PUT', body: JSON.stringify({playlist: pl, time: t})}); PLAN.times = r.times }
+}
 async function savePlaylist(v) {
   await api(`/api/job/${encodeURIComponent(JOB)}/settings`, {method: 'PUT', body: JSON.stringify({playlist: v.trim()})});
   await refresh();
@@ -475,20 +480,22 @@ async function savePlaylist(v) {
 function planArgs() {
   const only = [...PLAN.sel].join(',');
   localStorage.setItem('plan_pat', $('#plPat').value); localStorage.setItem('plan_start', $('#plStart').value);
-  return {only, pattern: $('#plPat').value, start: $('#plStart').value, account: $('#plAcc').value, playlist: $('#plList').value.trim()};
+  return {only, pattern: $('#plPat').value, start: $('#plStart').value, account: $('#plAcc').value, playlist: $('#plList').value.trim(), time: $('#plTime').value};
 }
 async function planPreview() {
   const a = planArgs();
   if (!a.only) return alert('올릴 편을 고르세요');
-  const pv = await api(`/api/plan?job=${encodeURIComponent(JOB)}&only=${encodeURIComponent(a.only)}&pattern=${a.pattern}&start=${a.start}&account=${encodeURIComponent(a.account)}`);
+  const pv = await api(`/api/plan?job=${encodeURIComponent(JOB)}&only=${encodeURIComponent(a.only)}&pattern=${a.pattern}&start=${a.start}&account=${encodeURIComponent(a.account)}&time=${a.time}&playlist=${encodeURIComponent(a.playlist)}`);
   $('#plOut').innerHTML = `<table>${pv.rows.map(r => `<tr><td><b>${esc(r.when)}</b> (${r.dow})</td><td>${esc(r.sid)}</td><td class="muted">${esc(r.section)}</td></tr>`).join('')}</table>
-    <p class="muted">${a.playlist ? `재생목록 「${esc(a.playlist)}」에 넣어요.` : '재생목록 없이 올려요.'} 이미 예약해 둔 시각은 비켜 가요(다른 작업 것도).</p>`;
+    <p class="muted">${a.playlist ? `재생목록 「${esc(a.playlist)}」에 넣어요.` : '재생목록 없이 올려요.'} 시각 ${esc(pv.time || '패턴 기본')} — 이미 예약해 둔 시각은 비켜 가요(다른 작업 것도). 시각은 「매일 1편 · 정한 시각」 말고 다른 패턴에도 그 시각으로 들어가요.</p>`;
 }
 async function planApply() {
   const a = planArgs();
   if (!a.only) return alert('올릴 편을 고르세요');
   if (!confirm(`${a.only.split(',').length}편을 「${PLAN.patterns[a.pattern]}」 시각에 예약 공개로 올릴까요?${a.playlist ? `\n재생목록: ${a.playlist}` : ''}`)) return;
   const args = ['plan', '--job', JOB, '--only', a.only, '--account', a.account, '--pattern', a.pattern, '--apply', '--playlist', a.playlist];
+  if (a.time) args.push('--time', a.time);
+  await saveTime();
   if (a.start) args.push('--start', a.start);
   await savePlaylist(a.playlist);
   await runArgs(args);

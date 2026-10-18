@@ -140,10 +140,14 @@ def cmd_plan(a) -> None:
         log("올릴 편이 없어요 — 영상이 있고 아직 안 올린 편만 예약해요.")
         return
     start = schedule.parse_when(a.start) if a.start else None
-    slots = schedule.next_slots(len(left), acc["name"], start=start, pat=a.pattern)
     playlist = a.playlist if a.playlist is not None else (job.get("youtube.playlist") or "")
+    at = a.time or (schedule.playlist_times().get(playlist) if playlist else None)
+    if a.time and playlist:
+        schedule.set_playlist_time(playlist, a.time)
+    slots = schedule.next_slots(len(left), acc["name"], start=start, pat=a.pattern, at=at)
     log(f"{'예약 걸기' if a.apply else '미리보기'} — {len(left)}편 · {acc.get('label', acc['name'])}"
-        + (f" · 재생목록 「{playlist}」" if playlist else "") + f" · {schedule.PATTERNS.get(a.pattern or schedule.DEFAULT, {}).get('label', '')}")
+        + (f" · 재생목록 「{playlist}」" if playlist else "") + f" · {schedule.PATTERNS.get(a.pattern or schedule.DEFAULT, {}).get('label', '')}"
+        + (f" · {at}" if at else ""))
     for sid, when in zip(left, slots):
         log(f"  {when:%m-%d(%a) %H:%M}  {sid}  {(job.unit(sid).section if job.unit(sid) else '')[:40]}")
     if not a.apply:
@@ -267,6 +271,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--account")
     p.add_argument("--pattern", help="예약 패턴: " + ", ".join(__import__("aside_long.schedule", fromlist=["x"]).PATTERNS))
     p.add_argument("--start", help="이 날짜부터(2026-10-22)")
+    p.add_argument("--time", help="올릴 시각 HH:MM — 비우면 재생목록별로 정해 둔 시각(playlists.json), 없으면 패턴 시각")
     p.add_argument("--playlist")
     p.add_argument("--apply", action="store_true", help="없으면 미리보기만")
     sub.add_parser("ui")
