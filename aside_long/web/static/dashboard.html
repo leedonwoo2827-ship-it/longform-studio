@@ -448,6 +448,17 @@ async function pageUp() {
 // ── 한 번에 예약 (쇼츠 aside 의 plan 과 같은 방식) ──
 let PLAN = {sel: null};
 async function planCard() {
+  // 한 번에 예약은 **사이드 패널**에서 — 왼쪽 Studio 창을 보며 오른쪽에서 거는 게 맞다(사용자 2026-10-18). 본진에는 여는 버튼만.
+  const el = $('#planCard'); if (!el) return;
+  if (!ACCS) ACCS = await api('/api/accounts');
+  el.innerHTML = `<h2>올리기 · 예약 <span class="muted">— 한 번에 예약은 오른쪽 사이드 패널에서 해요(왼쪽은 YouTube Studio)</span></h2>
+    <div class="row">
+      <button class="pri" onclick="api('/api/panel/open',{method:'POST'})" title="오른쪽 끝에 좁은 올리기 패널 — 「한 번에 예약」·「한 편씩」">사이드 패널 열기</button>
+      <button data-run onclick="runArgs(['login','--account',(ACCS.current||'')])" ${S.busy ? 'disabled' : ''} title="왼쪽에 YouTube Studio Chrome — 로그인·채널 확인">로그인 창 열기</button>
+      <span class="muted">패널의 「한 번에 예약」: 재생목록 · 시작일 · 시작 시각(재생목록별) · 패턴(매일 / 24·12·8·6·3시간 간격 …) → 미리보기 → 예약 걸기</span>
+    </div>`;
+}
+async function planCardFull() {
   const el = $('#planCard'); if (!el) return;
   const j = job(); if (!j) return;
   if (!ACCS) ACCS = await api('/api/accounts');
