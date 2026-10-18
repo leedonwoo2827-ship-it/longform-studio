@@ -118,6 +118,50 @@ def cmd_account(a) -> None:
         log(f"  {'▶' if acc['name'] == cur else ' '} {acc['name']} {acc.get('label', '')} (포트 {acc['port']})")
 
 
+def ready(job: Job, only: Optional[List[str]] = None) -> List[str]:
+    """영상이 있고 아직 안 올렸고 예약도 안 건 편 — 편 번호 순서."""
+    st = job.state()
+    out = []
+    for u in job.units:
+        s = st.get(u.prefix) or {}
+        if job.video(u.prefix).exists() and not s.get("posted") and not (s.get("scheduled") or {}).get("when"):
+            out.append(u.prefix)
+    return [x for x in out if not only or x in only]
+
+
+def cmd_plan(a) -> None:
+    """남은 편을 패턴의 빈 시각 칸에 차례로 — --apply 면 한 편씩 Studio 예약 공개로 올린다(한 편이 실패해도 다음 편 계속)."""
+    import argparse
+    from . import accounts, schedule
+    job = need(a.job)
+    acc = accounts.get(a.account)
+    left = ready(job, _only(a.only))
+    if not left:
+        log("올릴 편이 없어요 — 영상이 있고 아직 안 올린 편만 예약해요.")
+        return
+    start = schedule.parse_when(a.start) if a.start else None
+    slots = schedule.next_slots(len(left), acc["name"], start=start, pat=a.pattern)
+    playlist = a.playlist if a.playlist is not None else (job.get("youtube.playlist") or "")
+    log(f"{'예약 걸기' if a.apply else '미리보기'} — {len(left)}편 · {acc.get('label', acc['name'])}"
+        + (f" · 재생목록 「{playlist}」" if playlist else "") + f" · {schedule.PATTERNS.get(a.pattern or schedule.DEFAULT, {}).get('label', '')}")
+    for sid, when in zip(left, slots):
+        log(f"  {when:%m-%d(%a) %H:%M}  {sid}  {(job.unit(sid).section if job.unit(sid) else '')[:40]}")
+    if not a.apply:
+        log("미리보기예요 — 「예약 걸기」를 누르면 위 시각대로 한 편씩 올려요.")
+        return
+    fails: List[str] = []
+    for sid, when in zip(left, slots):
+        ok = _guard(f"{sid} 예약 업로드", lambda sid=sid, when=when: cmd_post(argparse.Namespace(
+            job=job.name, only=sid, account=acc["name"], at=when.strftime(schedule.FMT), visibility="public",
+            dry_run=False, force=False, playlist=playlist)))
+        if not ok:
+            fails.append(sid)
+    if fails:
+        log(f"예약 {len(left) - len(fails)}편 완료 · 실패 {len(fails)}편: {', '.join(fails)} — 다시 누르면 남은 것만 해요")
+        raise SystemExit("일부 편을 예약하지 못했어요")
+    log(f"✓ {len(left)}편 모두 예약 공개로 올렸어요")
+
+
 def cmd_post(a) -> None:
     from . import accounts, youtube
     from datetime import datetime
@@ -145,8 +189,10 @@ def cmd_post(a) -> None:
         log(f"▶ {sid} " + ("미리 채워 보기" if a.dry_run else f"예약 공개({when:%m월 %d일 %H:%M})" if when else f"올리기({vis})")
             + f" → {acc.get('label', acc['name'])}")
         try:
+            playlist = getattr(a, "playlist", None)
+            playlist = playlist if playlist is not None else (job.get("youtube.playlist") or "")
             res = youtube.upload(acc, script, video, timing=timing, thumb=thumb, when=when,
-                                 visibility=vis, dry_run=a.dry_run)
+                                 visibility=vis, dry_run=a.dry_run, playlist=playlist)
         except youtube.PostError as e:
             job.update_state(sid, {"error": str(e)[:300]})
             raise SystemExit(f"✗ 올리지 못했어요: {e}")
@@ -214,6 +260,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--visibility", choices=["public", "unlisted", "private"])
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--playlist", help="재생목록 이름(없으면 만든다). 비우면 작업 설정 youtube.playlist")
+    p = sub.add_parser("plan")
+    p.add_argument("--job")
+    p.add_argument("--only", help="올릴 편(쉼표). 비우면 영상이 있고 아직 안 올린 것 전부")
+    p.add_argument("--account")
+    p.add_argument("--pattern", help="예약 패턴: " + ", ".join(__import__("aside_long.schedule", fromlist=["x"]).PATTERNS))
+    p.add_argument("--start", help="이 날짜부터(2026-10-22)")
+    p.add_argument("--playlist")
+    p.add_argument("--apply", action="store_true", help="없으면 미리보기만")
     sub.add_parser("ui")
     sub.add_parser("tts-setup")
     sub.add_parser("doctor")
@@ -245,6 +300,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         acc = accounts.get(a.account)
         youtube.open_login(acc) if a.cmd == "login" else youtube.probe(acc)
         return 0
+    if a.cmd == "plan":
+        return 0 if _guard("한 번에 예약", lambda: cmd_plan(a)) else 1
     if a.cmd == "post":
         return 0 if _guard("올리기", lambda: cmd_post(a)) else 1
     job = need(a.job)

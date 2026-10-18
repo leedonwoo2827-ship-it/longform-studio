@@ -608,6 +608,62 @@ def _set_thumbnail(s: Session, thumb: Path) -> bool:
         return False
 
 
+TEXT_PL_OPEN = re.compile(r"^(선택|Select)$")
+TEXT_PL_DONE = re.compile(r"^(완료|Done)$")
+TEXT_PL_NEW = re.compile(r"^(새 재생목록|New playlist)$")
+TEXT_PL_CREATE = re.compile(r"^(만들기|Create)$")
+
+
+def _set_playlist(s: Session, name: str) -> bool:
+    """세부정보의 「재생목록」에서 name 을 체크. 없으면 「새 재생목록」으로 만들어 체크. 못 하면 경고만 — 업로드는 계속.
+
+    Studio 화면 이름이 자주 바뀌어 **화면 글자로** 찾는다(가장 덜 깨진다)."""
+    page = s.page
+    name = (name or "").strip()
+    if not name:
+        return False
+    try:
+        box = page.locator("ytcp-video-metadata-playlists").first
+        box.scroll_into_view_if_needed(timeout=8_000)
+        trig = box.locator("ytcp-text-dropdown-trigger, ytcp-dropdown-trigger, #basics").first
+        (trig if trig.count() else box.get_by_text(TEXT_PL_OPEN).first).click(timeout=8_000)
+        dlg = page.locator("ytcp-playlist-dialog, tp-yt-paper-dialog:visible").last
+        dlg.wait_for(state="visible", timeout=10_000)
+        time.sleep(0.8)
+        item = dlg.get_by_text(name, exact=True).first
+        if not item.count():
+            log(f"  · 재생목록 「{name}」 이 없어 새로 만들어요")
+            dlg.get_by_role("button", name=TEXT_PL_NEW).first.click(timeout=8_000)
+            time.sleep(0.6)
+            menu_new = page.get_by_text(TEXT_PL_NEW)
+            if menu_new.count() > 1:
+                menu_new.last.click(timeout=5_000)      # 「새 재생목록 / 새 팟캐스트」 메뉴가 뜨는 판
+            time.sleep(0.8)
+            form = page.locator("ytcp-playlist-creation-dialog, ytcp-dialog:visible").last
+            title_box = form.locator("textarea, #textbox, input").first
+            title_box.click(timeout=8_000)
+            page.keyboard.insert_text(name)
+            form.get_by_role("button", name=TEXT_PL_CREATE).first.click(timeout=8_000)
+            time.sleep(2.5)
+            item = dlg.get_by_text(name, exact=True).first
+        else:
+            item.click(timeout=8_000)
+        time.sleep(0.6)
+        dlg.get_by_role("button", name=TEXT_PL_DONE).first.click(timeout=8_000)
+        time.sleep(0.8)
+        log(f"  · 재생목록 「{name}」에 넣었어요")
+        return True
+    except Exception as e:      # noqa: BLE001
+        detail(f"  재생목록 실패: {e}")
+        s.shot("playlist-fail")
+        try:
+            page.keyboard.press("Escape")
+        except Exception:       # noqa: BLE001
+            pass
+        log(f"  △ 재생목록 「{name}」을 고르지 못했어요 — Studio 에서 직접 넣어 주세요(업로드는 계속해요)")
+        return False
+
+
 TEXT_ALTERED = re.compile(r"(변경되거나 합성된|Altered content|altered or synthetic)", re.I)
 
 
@@ -685,7 +741,7 @@ def _pin_comment(s: Session, url: str, text: str) -> bool:
 
 def upload(acc: Dict[str, Any], script: Dict[str, Any], video: Path, *, timing: Optional[Dict[str, Any]] = None,
            thumb: Optional[Path] = None, when: Optional[datetime] = None,
-           visibility: str = "public", dry_run: bool = False) -> Dict[str, Any]:
+           visibility: str = "public", dry_run: bool = False, playlist: str = "") -> Dict[str, Any]:
     """롱폼 한 편 업로드. when 이 있으면 YouTube 예약 공개(그 시각에 공개 — PC 가 꺼져 있어도 된다).
 
     ★ 파일을 넣은 뒤에는 **다시 시도하지 않는다** — 페이지를 다시 열면 같은 영상이 초안으로 하나 더 생기고
@@ -713,6 +769,8 @@ def upload(acc: Dict[str, Any], script: Dict[str, Any], video: Path, *, timing: 
                 _set_thumbnail(s, thumb)
             if m["tags"]:
                 _fill_tags(s, m["tags"])
+            if playlist:
+                _set_playlist(s, playlist)
             if config.load()["youtube"].get("ai_disclosure"):
                 _set_altered(s)
             log("  ④ 「아동용 아님」 고르는 중")

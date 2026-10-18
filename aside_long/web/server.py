@@ -26,8 +26,8 @@ from ..job import Job, all_jobs, scenes
 from ..log import detail, log
 
 STATIC = Path(__file__).parent / "static"
-ALLOWED = {"post", "login", "yt-meta", "probe", "all", "make", "prep", "s0-rewrite", "s1-script", "s2-tts", "s3-images", "s4-render", "s5-thumb", "doctor"}
-NAMES = {"post": "유튜브 올리기", "login": "유튜브 로그인 창", "yt-meta": "7 유튜브 문구", "probe": "업로드 창 확인", "all": "전체 1→7", "prep": "1→3 개작·대본·목소리", "make": "4→7 그림·영상·썸네일·문구", "s0-rewrite": "안전 개작", "s1-script": "대본·채점",
+ALLOWED = {"plan", "post", "login", "yt-meta", "probe", "all", "make", "prep", "s0-rewrite", "s1-script", "s2-tts", "s3-images", "s4-render", "s5-thumb", "doctor"}
+NAMES = {"plan": "한 번에 예약", "post": "유튜브 올리기", "login": "유튜브 로그인 창", "yt-meta": "7 유튜브 문구", "probe": "업로드 창 확인", "all": "전체 1→7", "prep": "1→3 개작·대본·목소리", "make": "4→7 그림·영상·썸네일·문구", "s0-rewrite": "안전 개작", "s1-script": "대본·채점",
          "s2-tts": "목소리", "s3-images": "그림(Codex)", "s4-render": "영상 굽기", "s5-thumb": "썸네일", "doctor": "점검"}
 
 app = FastAPI(title="aside-long")
@@ -135,6 +135,25 @@ def index() -> str:
     return (STATIC / "dashboard.html").read_text(encoding="utf-8")
 
 
+@app.get("/api/plan")
+def plan_preview(job: str, only: str = "", pattern: str = "", start: str = "", account: str = "") -> Dict[str, Any]:
+    """한 번에 예약 미리보기 — 올릴 편과 배정될 시각(실제로 올리지 않는다)."""
+    from .. import accounts, schedule
+    from ..cli import ready
+    j = _job(job)
+    left = ready(j, [x for x in only.split(",") if x] or None)
+    try:
+        acc = accounts.get(account or None)
+    except SystemExit as e:
+        raise HTTPException(400, str(e.code))
+    when = schedule.next_slots(len(left), acc["name"], start=schedule.parse_when(start) if start else None,
+                               pat=pattern or None)
+    rows = [{"sid": sid, "section": (j.unit(sid).section if j.unit(sid) else ""), "when": w.strftime(schedule.FMT),
+             "dow": "월화수목금토일"[w.weekday()]} for sid, w in zip(left, when)]
+    return {"rows": rows, "ready": left, "patterns": {k: v["label"] for k, v in schedule.PATTERNS.items()},
+            "default": schedule.DEFAULT}
+
+
 @app.get("/api/state")
 def state() -> Dict[str, Any]:
     cfg = config.load()
@@ -145,7 +164,8 @@ def state() -> Dict[str, Any]:
                                   "target_max_minutes": j.setting("long", "target_max_minutes"),
                                   "confirmed": bool(j.get("long.plan_confirmed")),
                                   "voice": j.setting("tts", "voice"), "speed": j.setting("tts", "speed"),
-                                  "thumb_scene": j.get("long.thumb_scene") or 1},
+                                  "thumb_scene": j.get("long.thumb_scene") or 1,
+                                  "playlist": j.get("youtube.playlist") or ""},
                      "units": [_unit_status(j, u) for u in j.units]})
     return {"jobs": jobs, "busy": RUN.busy, "cmd": RUN.cmd, "voices": tts.VOICES,
             "styles": [{"id": k, "name": v["name"]} for k, v in styles.PRESETS.items()],
@@ -566,6 +586,8 @@ def settings(name: str, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
         tt["voice"] = body["voice"]
     if body.get("speed"):
         tt["speed"] = float(body["speed"])
+    if "playlist" in body:
+        meta.setdefault("youtube", {})["playlist"] = str(body["playlist"] or "").strip()
     if body.get("title"):
         meta["title"] = str(body["title"])
     config.write_json(job.dir / "job.json", meta)
