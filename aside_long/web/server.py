@@ -649,6 +649,8 @@ def unit(name: str, sid: str) -> Dict[str, Any]:
         "youtube": yt.read_text(encoding="utf-8") if yt.exists() else "",
         "folder": str(u.dir),
         "upload": _upload_info(job, sid, script),
+        # 해설북(다른 도구)에서 만들어 넣은 단원 — 1~6단계는 잠그고 유튜브 문구·올리기만
+        "external": (config.read_json(u.dir / "unit.json", {}) or {}).get("from"),
     }
 
 

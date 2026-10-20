@@ -312,6 +312,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     job = need(a.job)
     only = _only(a.only)
     kw = {"only": only, "force": a.force}
+    if a.cmd in STAGES and a.cmd != "yt-meta":
+        ext = [u.prefix for u in job.pick(only) if external(u)]
+        if ext:
+            log(f"· {', '.join(ext)} 는 해설북에서 만든 단원이라 「{a.cmd}」를 건너뛰어요 (유튜브 문구·올리기만 해요)")
+            rest = [u.prefix for u in job.pick(only) if not external(u)]
+            if not rest:
+                return 0
+            only = kw["only"] = rest
     if a.cmd in STAGES:
         if a.cmd == "s3-images" and a.scenes:
             kw["scenes_only"] = [int(x) for x in a.scenes.split(",") if x.strip().isdigit()]
@@ -319,11 +327,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     stages = STAGES if a.cmd == "all" else STAGES[:3] if a.cmd == "prep" else MAKE
     for u in job.pick(only):
         log(f"━━ {u.prefix} {u.section}")
-        for s in stages:
+        if external(u):
+            log("  해설북에서 만든 단원 — 영상·썸네일은 그대로 두고 유튜브 문구만 해요")
+        for s in ([x for x in stages if x == "yt-meta"] if external(u) else stages):
             if not _guard(f"{u.prefix} {s}", lambda: run_stage(s, Job(job.name), only=[u.prefix], force=a.force)):
                 log(f"  {u.prefix} 는 여기서 멈추고 다음 원고로 넘어가요.")
                 break
     return 0
+
+
+def external(u) -> bool:
+    """해설북(다른 도구)에서 완성해 넣은 단원인가 — unit.json 의 from"""
+    return bool((config.read_json(u.dir / "unit.json", {}) or {}).get("from"))
 
 
 if __name__ == "__main__":
