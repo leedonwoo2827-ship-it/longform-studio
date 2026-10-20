@@ -265,6 +265,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--force", action="store_true")
     p.add_argument("--playlist", help="재생목록 이름(없으면 만든다). 비우면 작업 설정 youtube.playlist")
+    p = sub.add_parser("ebook-link", help="해설북에서 넣은 단원: 올린 영상을 해설북 이북에 연동")
+    p.add_argument("--job")
+    p.add_argument("--only")
     p = sub.add_parser("plan")
     p.add_argument("--job")
     p.add_argument("--only", help="올릴 편(쉼표). 비우면 영상이 있고 아직 안 올린 것 전부")
@@ -309,6 +312,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0 if _guard("한 번에 예약", lambda: cmd_plan(a)) else 1
     if a.cmd == "post":
         return 0 if _guard("올리기", lambda: cmd_post(a)) else 1
+    if a.cmd == "ebook-link":
+        return 0 if _guard("이북 연동", lambda: cmd_ebook_link(need(a.job), _only(a.only))) else 1
     job = need(a.job)
     only = _only(a.only)
     kw = {"only": only, "force": a.force}
@@ -334,6 +339,39 @@ def main(argv: Optional[List[str]] = None) -> int:
                 log(f"  {u.prefix} 는 여기서 멈추고 다음 원고로 넘어가요.")
                 break
     return 0
+
+
+def cmd_ebook_link(job, only) -> None:
+    """해설북 단원만: <해설북>/.venv 파이썬으로 `python -m studio link --job <작업>` (해설북이 공방 업로드 주소를 읽는다)"""
+    import os
+    import subprocess
+    from pathlib import Path
+    done = 0
+    for u in job.pick(only):
+        info = config.read_json(u.dir / "unit.json", {}) or {}
+        if info.get("from") != "haeseolbook":
+            log(f"· {u.prefix} 는 해설북 단원이 아니라 건너뛰어요")
+            continue
+        root = Path(info["root"])
+        py = root / ".venv" / "Scripts" / "python.exe"
+        if not py.exists():
+            raise SystemExit(f"해설북 폴더를 찾지 못했어요: {root} (해설북 setup.bat 확인)")
+        if not (job.state().get(u.prefix) or {}).get("posted"):
+            log(f"  △ {u.prefix} 는 아직 유튜브에 안 올렸어요 — 영상 없이 교재만 미리 게시해요")
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1")
+        lan = root / "server" / "config.lan.php"
+        if lan.exists():
+            env["HSB_CONFIG"] = str(lan)
+        log(f"━━ {u.prefix} 이북 연동 (해설북 작업 {info['job']})")
+        p = subprocess.run([str(py), "-m", "studio", "link", "--job", info["job"]], cwd=str(root), env=env,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        for line in (p.stdout or "").splitlines():
+            log("  " + line)
+        if p.returncode != 0:
+            raise SystemExit(f"이북 연동 실패: {(p.stderr or p.stdout)[-300:]}")
+        done += 1
+    log(f"✓ 이북 연동 {done}편")
 
 
 def external(u) -> bool:

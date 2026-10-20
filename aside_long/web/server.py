@@ -26,8 +26,8 @@ from ..job import Job, all_jobs, scenes
 from ..log import detail, log
 
 STATIC = Path(__file__).parent / "static"
-ALLOWED = {"plan", "post", "login", "yt-meta", "probe", "all", "make", "prep", "s0-rewrite", "s1-script", "s2-tts", "s3-images", "s4-render", "s5-thumb", "doctor"}
-NAMES = {"plan": "한 번에 예약", "post": "유튜브 올리기", "login": "유튜브 로그인 창", "yt-meta": "7 유튜브 문구", "probe": "업로드 창 확인", "all": "전체 1→7", "prep": "1→3 개작·대본·목소리", "make": "4→7 그림·영상·썸네일·문구", "s0-rewrite": "안전 개작", "s1-script": "대본·채점",
+ALLOWED = {"ebook-link", "plan", "post", "login", "yt-meta", "probe", "all", "make", "prep", "s0-rewrite", "s1-script", "s2-tts", "s3-images", "s4-render", "s5-thumb", "doctor"}
+NAMES = {"ebook-link": "이북 연동(해설북)", "plan": "한 번에 예약", "post": "유튜브 올리기", "login": "유튜브 로그인 창", "yt-meta": "7 유튜브 문구", "probe": "업로드 창 확인", "all": "전체 1→7", "prep": "1→3 개작·대본·목소리", "make": "4→7 그림·영상·썸네일·문구", "s0-rewrite": "안전 개작", "s1-script": "대본·채점",
          "s2-tts": "목소리", "s3-images": "그림(Codex)", "s4-render": "영상 굽기", "s5-thumb": "썸네일", "doctor": "점검"}
 
 app = FastAPI(title="aside-long")
@@ -119,7 +119,19 @@ def _unit_status(job: Job, u) -> Dict[str, Any]:
                      if (u.bundle_dir / "out" / f"{sid}_thumb.jpg").exists() else None,
             "posted": ((job.state().get(sid) or {}).get("posted") or {}).get("url") or None,
             "scheduled": ((job.state().get(sid) or {}).get("scheduled") or {}).get("when"),
-            "upload_error": bool((job.state().get(sid) or {}).get("error"))}
+            "upload_error": bool((job.state().get(sid) or {}).get("error")),
+            **_ebook_status(u)}
+
+
+def _ebook_status(u) -> Dict[str, Any]:
+    """해설북에서 넣은 단원이면 {external, ebook: 연동|미리보기|None} — 해설북 작업 상태를 읽는다"""
+    info = config.read_json(u.dir / "unit.json", {}) or {}
+    if not info.get("from"):
+        return {"external": None, "ebook": None}
+    st = config.read_json(Path(info.get("root", "")) / "studio" / "jobs" / str(info.get("job", "")) / "state.json", {}) or {}
+    s7 = ((st.get("stages") or {}).get("s7") or {}).get("done")
+    ebook = "연동" if s7 else ("미리보기" if st.get("preview_published") else None)
+    return {"external": info["from"], "ebook": ebook}
 
 
 def _raw_chars(u) -> int:
