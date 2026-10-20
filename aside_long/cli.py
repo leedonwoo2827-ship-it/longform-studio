@@ -208,6 +208,11 @@ def cmd_post(a) -> None:
             patch["scheduled"] = {"when": when.strftime("%Y-%m-%d %H:%M"), "account": acc["name"], "mode": "native"}
         job.update_state(sid, patch)
         log(f"✓ 올렸어요 — {res.get('url') or 'Studio 「콘텐츠」에서 확인'}")
+        if external(u) and res.get("url") and not when:    # 해설북 단원: 바로 이북 연동(예약이면 공개 전엔 재생이 안 되니 나중에)
+            try:
+                cmd_ebook_link(Job(job.name), [sid])
+            except (Exception, SystemExit) as e:      # noqa: BLE001 — 업로드는 이미 됐다
+                log(f"  △ 이북 연동은 못 했어요({e}) — 「📖 이북 연동」을 눌러 주세요")
 
 
 def cmd_doctor(_a=None) -> int:

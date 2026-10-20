@@ -806,6 +806,8 @@ def upload(acc: Dict[str, Any], script: Dict[str, Any], video: Path, *, timing: 
             page.locator(SEL["close"]).first.click(timeout=10_000)
         except Exception:
             pass
+        if not url:                                   # 업로드 창에서 주소를 못 읽은 경우 — 채널 콘텐츠 목록에서 제목으로
+            url = _find_url_by_title(s, title)
         pinned = None
         if m["pinned_comment"]:
             if when or visibility != "public":
@@ -817,6 +819,41 @@ def upload(acc: Dict[str, Any], script: Dict[str, Any], video: Path, *, timing: 
         return {"url": url, "title": title, "at": datetime.now().isoformat(timespec="seconds"),
                 "scheduled_for": when.isoformat(timespec="minutes") if when else None,
                 "visibility": "scheduled" if when else visibility, "pinned": pinned}
+
+
+_ROWS_JS = """() => [...document.querySelectorAll('ytcp-video-row')].slice(0, 10).map(r => {
+  const a = r.querySelector('a[href*="/video/"]'); const t = r.querySelector('#video-title');
+  return {t: t ? t.textContent.trim() : '', h: a ? a.getAttribute('href') : ''}; })"""
+
+
+def _find_url_by_title(s: Session, title: str) -> Optional[str]:
+    """Studio 「채널 콘텐츠」 최신 목록에서 같은 제목의 영상 ID 를 찾는다(2026-10-20: 업로드 창에서 링크를 못 읽은 일이 있었다)."""
+    page = s.page
+    try:
+        m = re.search(r"/channel/(UC[\w-]+)", page.url)
+        if not m:                                   # studio.youtube.com/ 은 잠시 뒤 /channel/UC… 로 바뀐다
+            page.goto(HOME, wait_until="domcontentloaded")
+            for _ in range(20):
+                m = re.search(r"/channel/(UC[\w-]+)", page.url)
+                if m:
+                    break
+                time.sleep(1)
+        if not m:
+            raise PostError("채널 주소를 알 수 없어요")
+        page.goto(f"https://studio.youtube.com/channel/{m.group(1)}/videos/upload", wait_until="domcontentloaded")
+        want = re.sub(r"\s+", " ", title).strip()[:40]
+        for _ in range(15):
+            time.sleep(2)
+            for r in page.evaluate(_ROWS_JS) or []:
+                vid = re.search(r"/video/([A-Za-z0-9_-]{11})", r.get("h") or "")
+                if vid and re.sub(r"\s+", " ", r.get("t") or "").strip().startswith(want):
+                    url = f"https://www.youtube.com/watch?v={vid.group(1)}"
+                    log(f"  · 영상 주소를 콘텐츠 목록에서 찾았어요: {url}")
+                    return url
+    except Exception as e:      # noqa: BLE001
+        detail(f"  콘텐츠 목록에서 주소 찾기 실패: {e}")
+    log("  △ 영상 주소를 못 찾았어요 — Studio 「콘텐츠」에서 확인해 주세요")
+    return None
 
 
 def probe(acc: Dict[str, Any]) -> Path:
