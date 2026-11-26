@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -91,7 +92,11 @@ def friendly(e: BaseException) -> str:
     return f"✗ 문제가 생겨서 멈췄어요: {str(e)[:200]} (자세한 내용은 logs/detail.log)"
 
 
+LAST_ERR = ""
+
+
 def _guard(what: str, fn) -> bool:
+    global LAST_ERR
     try:
         fn()
         return True
@@ -100,8 +105,19 @@ def _guard(what: str, fn) -> bool:
     except BaseException as e:      # noqa: BLE001
         import traceback
         detail(f"{what} 실패: {traceback.format_exc()}")
-        log(friendly(e))
+        LAST_ERR = friendly(e)
+        log(LAST_ERR)
         return False
+
+
+def _mark_fail(u, failed: Optional[str], done: List[str] = ()) -> None:
+    """편 폴더의 _실패.json — 대시보드가 어느 단계에서 왜 멈췄는지 보여 준다. 그 단계가 되면(done) 지운다."""
+    p = u.dir / "_실패.json"
+    if failed:
+        config.write_json(p, {"stage": failed, "msg": LAST_ERR.lstrip("✗ ").strip(),
+                              "at": time.strftime("%Y-%m-%d %H:%M")})
+    elif p.exists() and (config.read_json(p, {}) or {}).get("stage") in done:
+        p.unlink()
 
 
 def cmd_account(a) -> None:
@@ -333,7 +349,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if a.cmd in STAGES:
         if a.cmd == "s3-images" and a.scenes:
             kw["scenes_only"] = [int(x) for x in a.scenes.split(",") if x.strip().isdigit()]
-        return 0 if _guard(a.cmd, lambda: run_stage(a.cmd, job, **kw)) else 1
+        ok = _guard(a.cmd, lambda: run_stage(a.cmd, job, **kw))
+        picked = job.pick(only)
+        if len(picked) == 1:            # 한 편만 돌렸으면 그 편의 실패 표시를 맞춘다
+            _mark_fail(picked[0], None if ok else a.cmd, [a.cmd])
+        return 0 if ok else 1
     stages = STAGES if a.cmd == "all" else STAGES[:3] if a.cmd == "prep" else MAKE
     for u in job.pick(only):
         log(f"━━ {u.prefix} {u.section}")
@@ -341,8 +361,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             log("  해설북에서 만든 단원 — 영상·썸네일은 그대로 두고 유튜브 문구만 해요")
         for s in ([x for x in stages if x == "yt-meta"] if external(u) else stages):
             if not _guard(f"{u.prefix} {s}", lambda: run_stage(s, Job(job.name), only=[u.prefix], force=a.force)):
+                _mark_fail(u, s)
                 log(f"  {u.prefix} 는 여기서 멈추고 다음 원고로 넘어가요.")
                 break
+        else:
+            _mark_fail(u, None, stages)
     return 0
 
 

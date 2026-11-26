@@ -120,6 +120,7 @@ def _unit_status(job: Job, u) -> Dict[str, Any]:
             "posted": ((job.state().get(sid) or {}).get("posted") or {}).get("url") or None,
             "scheduled": ((job.state().get(sid) or {}).get("scheduled") or {}).get("when"),
             "upload_error": bool((job.state().get(sid) or {}).get("error")),
+            "fail": config.read_json(u.dir / "_실패.json", None),
             **_ebook_status(u)}
 
 

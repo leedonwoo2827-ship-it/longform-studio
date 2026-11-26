@@ -179,6 +179,9 @@ async function pageMake() {
         <h2>1 원고 넣기</h2>
         <label>작업 이름 (폴더 이름 — 비우면 파일 이름에서)</label><input id="mkName" placeholder="예: 한국사1">
         <label>시리즈 제목</label><input id="mkTitle" placeholder="예: 고등학교 한국사1">
+        <label>유튜브 재생목록 — 2·3권이면 앞 권과 같은 재생목록을 고르세요</label><input id="mkList" list="mkLists" placeholder="비우면 나중에 ④ 올리기에서 정해요">
+        <datalist id="mkLists">${plOpts()}</datalist>
+        <p class="muted" style="margin:2px 0 6px">같은 재생목록이면 앞 권 예약이 끝난 다음 날부터 이어서 예약돼요.</p>
         <div class="drop" id="drop">docx 를 끌어다 놓거나 클릭<br><span class="muted">책 한 권이면 「주제 NN」마다 나눈 뒤, 길이를 보고 묶을지 정해요.<br>원문은 01_raw 에 보관만 하고, 영상은 안전 개작본으로 만들어요.</span></div>
         <input type="file" id="file" accept=".docx,.txt,.md" multiple hidden>
       </div>
@@ -207,7 +210,11 @@ function analysisCard(ok) {
     </table>
     <p style="margin:10px 0 6px"><b>${esc(a.verdict)}</b></p>
     <p class="muted" style="margin:0 0 8px">${esc(a.basis)}</p>
-    ${ok ? `<p>${pill('구성 확정됨', 'ok')} <button onclick="replan()">다시 정하기</button></p>` : `
+    ${ok ? `<div style="margin-top:6px;padding:12px;border-radius:8px;background:#dcfce7">
+      <b>✓ 원고 정리가 끝났어요 — 이제 「② 만들기」로 가세요.</b>
+      <p class="muted" style="margin:4px 0 8px">거기서 편을 고르고(안 고르면 전체) 「▶ 1→3」 → 「▶ 4→7」 순서로 누르면 돼요.</p>
+      <div class="row"><button class="pri" onclick="show('dash')">② 만들기로 가기 →</button><span style="flex:1"></span><button onclick="replan()">다시 정하기</button></div>
+    </div>` : `
     <div class="row">
       ${a.merges ? `<button class="pri" onclick="applyPlan(true)">추천대로 묶고 확정 (${a.groups.length}편)</button>` : ''}
       <button onclick="applyPlan(false)">묶지 않고 확정 (${a.rows.length}편)</button>
@@ -322,6 +329,7 @@ async function bulk(cmd) {
   const what = {prep: '1→3 개작·대본·목소리까지', make: '4→7 그림·영상·썸네일·유튜브 문구까지', all: '개작부터 유튜브 문구까지'}[cmd];
   if (!confirm(`「${JOB}」 단원 ${n}개를 ${what} 만들까요?`)) return;
   await runArgs([cmd, '--job', JOB, ...(list.length ? ['--only', list.join(',')] : [])]);
+  if (PAGE === 'make') show('dash');      // 진행은 ② 만들기 표에서 본다
 }
 function wireDrop() {
   const drop = $('#drop'); if (!drop) return;
@@ -330,6 +338,11 @@ function wireDrop() {
   drop.ondragleave = () => drop.classList.remove('on');
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('on'); uploadDocs([...e.dataTransfer.files]) };
   $('#file').onchange = e => uploadDocs([...e.target.files]);
+}
+function plOpts() {        // 다른 작업들이 쓰는 재생목록 — 2·3권을 앞 권에 이어 붙일 때 고른다
+  const m = {};
+  for (const j of S.jobs) { const p = (j.settings.playlist || '').trim(); if (p) (m[p] = m[p] || []).push(j.name) }
+  return Object.entries(m).map(([p, ns]) => `<option value="${esc(p)}">${esc(ns.join(', '))}</option>`).join('');
 }
 async function uploadDocs(files) {
   if (!files.length) return;
@@ -341,6 +354,8 @@ async function uploadDocs(files) {
   }
   const title = $('#mkTitle').value.trim() || stem;
   for (const f of files) await api('/api/upload', {method: 'POST', body: JSON.stringify({job: name, title, filename: f.name, data: await readURL(f)})});
+  const pl = $('#mkList').value.trim();
+  if (pl) await api(`/api/job/${encodeURIComponent(name)}/settings`, {method: 'PUT', body: JSON.stringify({playlist: pl})});
   JOB = name; SEL.clear(); show('make');
 }
 
@@ -375,16 +390,17 @@ function pageDash() {
       <tr><th style="width:28px"><input type="checkbox" style="width:auto" onchange="dAll(this.checked)" ${us.length && us.every(u => SEL.has(u.prefix)) ? 'checked' : ''}></th><th>번호</th><th>단원</th><th>원고</th><th>개작</th><th>대본</th><th>음성</th><th>그림</th><th>영상</th><th>업로드</th>${us.some(u => u.external) ? '<th>이북</th>' : ''}</tr>
       ${us.map(u => `<tr onclick="SID='${u.prefix}';U=null;show('edit')">
         <td onclick="event.stopPropagation()"><input type="checkbox" style="width:auto" data-dsel="${u.prefix}" ${SEL.has(u.prefix) ? 'checked' : ''} onchange="dTog('${u.prefix}',this.checked)"></td>
-        <td><b>${esc(u.prefix)}</b></td><td>${esc(u.section)}</td><td class="muted">${(u.chars || 0).toLocaleString()}자</td>
-        <td>${u.external ? pill('해설북', 'ok') : u.rewrite ? pill(u.rewrite_passed === false ? '문제 남음' : '통과', u.rewrite_passed === false ? 'warn' : 'ok') : '—'}</td>
-        <td>${u.external ? pill('해설북', 'ok') : u.script ? pill((u.score ?? '') + '점' + (u.edited ? '·수정' : ''), u.score >= 80 ? 'ok' : 'warn') : '—'}</td>
-        <td>${u.audio_min ? u.audio_min + '분' : '—'}</td>
-        <td>${u.external ? pill('판서', 'ok') : u.scenes ? pill(u.images + '/' + u.scenes, u.images >= u.scenes ? 'ok' : 'warn') : '—'}</td>
-        <td>${u.video ? pill('완성', 'ok') : '—'}</td>
+        <td><b>${esc(u.prefix)}</b></td><td>${esc(u.section)}${u.fail ? `<div style="color:var(--bad);font-size:12px;margin-top:2px">✗ ${esc(FAILN[u.fail.stage] || u.fail.stage)}에서 멈췄어요 (${esc(u.fail.at || '')}) — ${esc(u.fail.msg || '')} · 체크하고 같은 버튼을 다시 누르면 남은 것만 해요</div>` : ''}</td><td class="muted">${(u.chars || 0).toLocaleString()}자</td>
+        <td>${u.fail?.stage === 's0-rewrite' ? pill('멈춤', 'bad') : u.external ? pill('해설북', 'ok') : u.rewrite ? pill(u.rewrite_passed === false ? '문제 남음' : '통과', u.rewrite_passed === false ? 'warn' : 'ok') : '—'}</td>
+        <td>${u.fail?.stage === 's1-script' && !u.script ? pill('멈춤', 'bad') : u.external ? pill('해설북', 'ok') : u.script ? pill((u.score ?? '') + '점' + (u.edited ? '·수정' : ''), u.score >= 80 ? 'ok' : 'warn') : '—'}</td>
+        <td>${u.fail?.stage === 's2-tts' ? pill('멈춤', 'bad') : u.audio_min ? u.audio_min + '분' : '—'}</td>
+        <td>${u.fail?.stage === 's3-images' ? pill('멈춤 ' + u.images + '/' + u.scenes, 'bad') : u.external ? pill('판서', 'ok') : u.scenes ? pill(u.images + '/' + u.scenes, u.images >= u.scenes ? 'ok' : 'warn') : '—'}</td>
+        <td>${u.fail?.stage === 's4-render' ? pill('멈춤', 'bad') : u.video ? pill('완성', 'ok') : '—'}</td>
         <td>${u.posted ? `<a href="${esc(u.posted)}" target="_blank" onclick="event.stopPropagation()">올림</a>` : u.scheduled ? pill('예약 ' + esc(u.scheduled), 'ok') : u.upload_error ? pill('실패', 'bad') : '—'}</td>${us.some(x => x.external) ? `<td>${u.external ? (u.ebook ? pill(u.ebook, u.ebook === '연동' ? 'ok' : 'warn') : '—') : ''}</td>` : ''}</tr>`).join('')}
     </table><p class="muted">체크한 편에만 위 버튼이 적용돼요(예: 두 편 골라 「4 그림」). 줄을 누르면 「③ 결과 보기」로 가요. 이미 된 단계는 건너뛰고 없는 것만 해요.</p></div>`;
   dUpd();
 }
+const FAILN = {'s0-rewrite': '개작', 's1-script': '대본', 's2-tts': '목소리', 's3-images': '그림', 's4-render': '영상', 's5-thumb': '썸네일', 'yt-meta': '유튜브 문구'};
 function dTog(p, on) { on ? SEL.add(p) : SEL.delete(p); dUpd() }
 function dAll(on) { SEL = new Set(on ? units().map(u => u.prefix) : []); document.querySelectorAll('[data-dsel]').forEach(c => c.checked = on); dUpd() }
 function dUpd() { const e = $('#dSelN'); if (e) e.textContent = SEL.size ? `(${[...SEL].join(', ')})` : '(아직 안 골랐어요)' }
@@ -538,6 +554,8 @@ async function pageSet() {
         <div class="row"><div style="flex:1"><label>목소리</label><select id="jV">${opt(voi, j.settings.voice)}</select></div>
           <div style="flex:1"><label>말 속도</label><input id="jSp" type="number" min="0.7" max="1.4" step="0.05" value="${j.settings.speed}"></div></div>
         <label>썸네일 그림(씬 번호)</label><input id="jTh" type="number" min="1" value="${j.settings.thumb_scene}">
+        <label>유튜브 재생목록 (2·3권은 앞 권과 같게)</label><input id="jPl" list="jPls" value="${esc(j.settings.playlist || '')}" placeholder="비우면 재생목록 없이 올려요">
+        <datalist id="jPls">${plOpts()}</datalist>
         <div class="row" style="margin-top:10px"><button class="pri" onclick="saveJob()">저장</button><span style="flex:1"></span>
           <button onclick="delJob()" style="color:var(--bad)">이 작업 지우기</button></div>
       </div>` : '<div class="card muted">작업이 없어요.</div>'}
@@ -622,7 +640,7 @@ async function codexAct(act) {
 async function saveJob() {
   await api(`/api/job/${encodeURIComponent(JOB)}/settings`, {method: 'PUT', body: JSON.stringify({
     title: $('#jT').value, style: $('#jS').value, target_minutes: +$('#jM').value, voice: $('#jV').value,
-    speed: +$('#jSp').value, thumb_scene: +$('#jTh').value})});
+    speed: +$('#jSp').value, thumb_scene: +$('#jTh').value, playlist: $('#jPl').value})});
   alert('저장했어요'); show('set');
 }
 async function delJob() {

@@ -167,10 +167,14 @@ def _wait_reset(resets_at: Optional[float], max_hours: float) -> bool:
         target = resets_at + 60
         log(f"  ⏳ Codex 한도가 {time.strftime('%H:%M', time.localtime(resets_at))} 에 풀려요 — 그때까지 기다렸다 이어 그려요 "
             f"(「■ 멈춤」으로 그만둘 수 있어요)")
+        # 1분씩 자며 벽시계를 본다 — 노트북이 절전(Modern Standby)에 들면 sleep 이 멈췄다가 깬 뒤 남은 만큼 더 자서,
+        # 10분씩 자면 리셋이 지나고도 최대 10분 놀았다(2026-10-25 22:00~23:19 절전).
+        last = time.time()
         while time.time() < min(target, end):
             left = target - time.time()
-            time.sleep(min(600, max(1, left)))
-            if left > 600:
+            time.sleep(min(60, max(1, left)))
+            if left > 600 and time.time() - last >= 600:
+                last = time.time()
                 log(f"    … 기다리는 중 ({int(left // 60)}분 남음)")
         return True
     log("  ⏳ Codex 한도 — 풀리는 시각을 몰라 30분마다 확인해요 (「■ 멈춤」으로 그만둘 수 있어요)")

@@ -96,8 +96,11 @@ def _run(prompt: str, system: str, *, model: str, schema: Optional[Dict[str, Any
 
 
 def _patient(fn):
-    """한도에 걸리면 풀릴 때까지 기다렸다 같은 호출을 다시 한다(밤새·며칠 무인 제작)."""
+    """한도에 걸리면 풀릴 때까지 기다렸다 같은 호출을 다시 한다(밤새·며칠 무인 제작).
+    「OAuth access token has expired」는 오래 쉬고 난 첫 호출에서 나고, CLI 가 곧 갱신한다
+    (2026-10-25 1-17 만 실패하고 바로 다음 1-19 는 됐다) — 잠깐 쉬었다 몇 번 다시 해 본다."""
     from .claude_wait import wait
+    expired = 0
     while True:
         try:
             return fn()
@@ -105,6 +108,14 @@ def _patient(fn):
             detail(f"  Claude 한도: {e}")
             if not wait(str(e)):
                 raise
+        except ClaudeNotLoggedIn as e:
+            if "expired" not in str(e).lower() or expired >= 3:
+                raise
+            expired += 1
+            from ..log import log
+            log(f"  Claude 로그인 토큰이 만료돼 갱신을 기다렸다 다시 해요 ({expired}/3) …")
+            auth_status()               # 상태 확인 호출이 갱신을 부르기도 한다
+            time.sleep(20 * expired)
 
 
 def structured(prompt: str, system: str, schema: Dict[str, Any], *, model: str,
