@@ -29,7 +29,7 @@ DEFAULTS: Dict[str, Any] = {
     "tts": {"voice": "F4", "speed": 1.0, "gap": 0.35, "scene_gap": 0.8, "lead": 0.6, "tail": 1.5,
             "assets_dir": "", "timeout_sec": 900},
     # engine: codex-api(그림 요청만 — 기본) / codex-cli(codex exec 작업 대화 — 예비). wait_on_limit: 5시간 한도에 걸리면 리셋까지 기다렸다 이어 그리기
-    "image": {"engine": "codex-api", "model": "", "workers": 3, "size": "1536x864", "timeout_sec": 600, "retries": 2,
+    "image": {"engine": "codex-cli", "model": "", "workers": 3, "size": "1536x864", "timeout_sec": 600, "retries": 2,
               "wait_on_limit": True, "max_wait_hours": 24},
     "render": {"w": 1920, "h": 1080, "fps": 30, "crf": 20, "preset": "medium",
                "image_h": 990, "caption_size": 68, "caption_font": "Pretendard SemiBold",
